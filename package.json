@@ -1,0 +1,24 @@
+{
+  "name": "agroclimavisio",
+  "version": "1.0.0",
+  "description": "AgroClimaVisio - Interface de visualisation agro-climatique",
+  "engines": {
+    "node": ">=20.0.0",
+    "yarn": ">=1.22.0"
+  },
+  "scripts": {
+    "dev:frontend": "cd frontend && yarn dev",
+    "dev:backend": "cd backend && poetry run uvicorn main:app --reload --host 0.0.0.0 --port 8000",
+    "install:frontend": "cd frontend && yarn install",
+    "install:backend": "cd backend && poetry install",
+    "build:frontend": "cd frontend && yarn build"
+  },
+  "keywords": [
+    "agriculture",
+    "climat",
+    "visualisation",
+    "cartes"
+  ],
+  "author": "",
+  "license": "MIT"
+}
