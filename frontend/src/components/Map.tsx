@@ -1,14 +1,17 @@
 import { useEffect, useRef } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import { mapStyles } from 'carte-facile';
+import 'carte-facile/carte-facile.css';
 import type { MapData } from '../types';
 
 interface MapProps {
   mapData: MapData | null;
   isLoading: boolean;
+  mapStyle: 'desaturated' | 'aerial';
 }
 
-export default function Map({ mapData, isLoading }: MapProps) {
+export default function Map({ mapData, isLoading, mapStyle }: MapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
 
@@ -34,37 +37,16 @@ export default function Map({ mapData, isLoading }: MapProps) {
     function initializeMap() {
       if (!mapContainer.current || map.current) return;
 
-      // Initialisation de la carte MapLibre avec style Positron (fond gris clair, gratuit, sans clé API)
+      // Initialisation de la carte MapLibre avec style IGN (carte-facile)
       try {
+        const style = mapStyle === 'aerial' ? mapStyles.aerial : mapStyles.desaturated;
+        
         map.current = new maplibregl.Map({
           container: mapContainer.current,
-          style: {
-            version: 8,
-            sources: {
-              'carto-positron': {
-                type: 'raster',
-                tiles: [
-                  'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
-                  'https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
-                  'https://c.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png'
-                ],
-                tileSize: 256,
-                attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>'
-              }
-            },
-            layers: [
-              {
-                id: 'carto-positron-layer',
-                type: 'raster',
-                source: 'carto-positron',
-                minzoom: 0,
-                maxzoom: 22
-              }
-            ],
-            glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf'
-          },
+          style: style,
           center: [1.4437, 43.6047], // Toulouse
-          zoom: 10
+          zoom: 10,
+          maxZoom: 18.9 // Niveau de zoom maximum adapté aux cartes IGN
         });
 
         // Ajouter les contrôles de navigation
@@ -92,6 +74,33 @@ export default function Map({ mapData, isLoading }: MapProps) {
       }
     };
   }, []);
+
+  // Mettre à jour le style de la carte quand mapStyle change
+  useEffect(() => {
+    if (!map.current) return;
+
+    const style = mapStyle === 'aerial' ? mapStyles.aerial : mapStyles.desaturated;
+    const currentData = mapData?.data;
+    
+    map.current.setStyle(style);
+    
+    // Réajouter les couches de données après le changement de style
+    map.current.once('styledata', () => {
+      if (currentData && map.current) {
+        // Réappliquer les données après le changement de style
+        setTimeout(() => {
+          if (map.current && mapData?.data) {
+            const sourceId = 'climate-data';
+            const source = map.current.getSource(sourceId) as maplibregl.GeoJSONSource | undefined;
+            if (source) {
+              source.setData(mapData.data as GeoJSON.FeatureCollection);
+            }
+          }
+        }, 100);
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapStyle]);
 
   useEffect(() => {
     if (!map.current || !mapData || !mapData.data) return;

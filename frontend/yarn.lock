@@ -880,6 +880,11 @@ caniuse-lite@^1.0.30001754:
   resolved "https://registry.yarnpkg.com/caniuse-lite/-/caniuse-lite-1.0.30001757.tgz#a46ff91449c69522a462996c6aac4ef95d7ccc5e"
   integrity sha512-r0nnL/I28Zi/yjk1el6ilj27tKcdjLsNqAOZr0yVjWPrSQyHgKI2INaEWw21bAQSv2LXRt1XuCS/GomNpWOxsQ==
 
+carte-facile@^0.8.1:
+  version "0.8.1"
+  resolved "https://registry.yarnpkg.com/carte-facile/-/carte-facile-0.8.1.tgz#674fe4fb896aedf1c8590a8db9643491c14fc10e"
+  integrity sha512-IyDZVdYMP+JWDBaYQyvjT8Uxu7URuz5sJWQYp/xT+3KH6U5GVZsHm30KEBHKVU+F0K4o4OlzZGF85EM6g6dVBQ==
+
 chalk@^4.0.0:
   version "4.1.2"
   resolved "https://registry.yarnpkg.com/chalk/-/chalk-4.1.2.tgz#aac4e2b7734a740867aeb16bf02aad556a1e7a01"

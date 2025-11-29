@@ -4,6 +4,8 @@ interface HeaderProps {
   availableYears: number[];
   comparisonMode: boolean;
   onComparisonModeToggle: () => void;
+  mapStyle: 'desaturated' | 'aerial';
+  onMapStyleChange: (style: 'desaturated' | 'aerial') => void;
 }
 
 export default function Header({
@@ -11,7 +13,9 @@ export default function Header({
   onYearChange,
   availableYears,
   comparisonMode,
-  onComparisonModeToggle
+  onComparisonModeToggle,
+  mapStyle,
+  onMapStyleChange
 }: HeaderProps) {
   return (
     <header className="app-header">
@@ -27,6 +31,16 @@ export default function Header({
               {availableYears.map(year => (
                 <option key={year} value={year}>{year}</option>
               ))}
+            </select>
+          </div>
+          <div className="map-style-selector">
+            <label>Fond de carte:</label>
+            <select
+              value={mapStyle}
+              onChange={(e) => onMapStyleChange(e.target.value as 'desaturated' | 'aerial')}
+            >
+              <option value="desaturated">Désaturé (IGN)</option>
+              <option value="aerial">Aérien (IGN)</option>
             </select>
           </div>
           <button

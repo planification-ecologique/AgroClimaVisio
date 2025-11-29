@@ -15,6 +15,7 @@ function App() {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [presets, setPresets] = useState<Preset[]>([]);
   const [availableYears, setAvailableYears] = useState<number[]>([2020, 2030, 2040, 2050]);
+  const [mapStyle, setMapStyle] = useState<'desaturated' | 'aerial'>('desaturated');
 
   // Charger les presets et années disponibles au démarrage
   useEffect(() => {
@@ -89,6 +90,8 @@ function App() {
         availableYears={availableYears}
         comparisonMode={comparisonMode}
         onComparisonModeToggle={() => setComparisonMode(!comparisonMode)}
+        mapStyle={mapStyle}
+        onMapStyleChange={setMapStyle}
       />
       <div className="app-content">
         <div className="parameters-sidebar">
@@ -99,7 +102,7 @@ function App() {
           />
         </div>
         <div className="map-area">
-          <Map mapData={mapData} isLoading={isLoading} />
+          <Map mapData={mapData} isLoading={isLoading} mapStyle={mapStyle} />
         </div>
       </div>
     </div>
