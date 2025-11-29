@@ -58,8 +58,6 @@ export default function ParametersPanel({
 
   return (
     <div className="parameters-panel">
-      <h2>Paramètres</h2>
-
       {/* Sélection de l'année */}
       <div className="parameter-group">
         <label>Année moyenne</label>
