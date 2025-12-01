@@ -41,11 +41,52 @@ Une fois le serveur démarré, la documentation interactive est disponible sur :
 
 ## Endpoints
 
+### Données de base
 - `GET /` - Informations de base de l'API
 - `GET /health` - Vérification de santé
 - `GET /api/presets` - Liste des presets agricoles
 - `GET /api/years` - Années disponibles pour les projections
-- `POST /api/maps/data` - Récupération des données de carte
+
+### Métadonnées des données climatiques
+- `GET /api/variables` - Liste des variables climatiques disponibles
+- `GET /api/experiments` - Liste des scénarios climatiques disponibles
+- `GET /api/datasets` - Liste des jeux de données avec filtres optionnels
+- `GET /api/datasets/summary` - Résumé statistique des données
+
+### Données de carte
+- `POST /api/maps/data` - Récupération des données de carte (utilise les données réelles si disponibles, sinon mockées)
+
+## Configuration
+
+Créez un fichier `.env` dans le répertoire `backend/` :
+
+```env
+# Chemin vers les données NetCDF (optionnel)
+CLIMATE_DATA_DIR=/chemin/vers/donnees/climatiques
+
+# Configuration API
+API_HOST=0.0.0.0
+API_PORT=8000
+CORS_ORIGINS=http://localhost:5173
+```
+
+## Données climatiques
+
+Par défaut, l'API utilise des données mockées pour le développement. Pour utiliser les données réelles :
+
+1. Téléchargez les fichiers NetCDF depuis data.gouv.fr
+2. Configurez `CLIMATE_DATA_DIR` dans votre `.env`
+3. L'API détectera automatiquement les fichiers
+
+Voir `CLIMATE_DATA_SETUP.md` pour plus de détails.
+
+## Structure du code
+
+- `main.py` - Point d'entrée FastAPI et endpoints
+- `models.py` - Modèles de données Pydantic pour les projections climatiques
+- `datasets.py` - Catalogue des jeux de données disponibles
+- `climate_data.py` - Chargeur de données NetCDF
+- `indicators.py` - Calcul des indicateurs agro-climatiques
 
 ## Commandes Poetry utiles
 
@@ -54,11 +95,16 @@ Une fois le serveur démarré, la documentation interactive est disponible sur :
 - `poetry remove <package>` - Supprimer une dépendance
 - `poetry update` - Mettre à jour les dépendances
 - `poetry show` - Afficher les dépendances installées
-- `poetry export -f requirements.txt --output requirements.txt` - Exporter vers requirements.txt (si nécessaire)
+- `poetry lock` - Mettre à jour le fichier de lock
 
 ## TODO
 
-- [ ] Intégrer les données climatiques de Météo-France
-- [ ] Implémenter le calcul des indicateurs agro-climatiques
-- [ ] Ajouter le cache pour les requêtes fréquentes
-- [ ] Ajouter l'authentification si nécessaire
+- [x] Structure de base de l'API
+- [x] Modèles de données pour les projections climatiques
+- [x] Catalogue des jeux de données disponibles
+- [x] Chargeur de données NetCDF
+- [x] Calcul des indicateurs agro-climatiques
+- [ ] Intégration complète avec les fichiers NetCDF réels
+- [ ] Cache pour améliorer les performances
+- [ ] Agrégation spatiale vers polygones administratifs
+- [ ] Support de plusieurs modèles climatiques

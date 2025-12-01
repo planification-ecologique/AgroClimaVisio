@@ -49,3 +49,5 @@ Thumbs.db
 
 # Build
 build/
+/backend/data
+/docs/temp

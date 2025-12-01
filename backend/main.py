@@ -3,8 +3,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import date
+from pathlib import Path
 import random
 import math
+
+from models import (
+    VariableType, ExperimentType, VARIABLES_INFO, VariableInfo
+)
+from datasets import (
+    AVAILABLE_DATASETS, get_datasets_for_variables, 
+    get_datasets_for_experiment, get_datasets_for_period
+)
 
 app = FastAPI(title="AgroClimaVisio API", version="1.0.0")
 
@@ -125,12 +134,154 @@ def generate_mock_geojson(map_type: str, center_lon: float = 1.4437, center_lat:
 async def get_map_data(request: MapRequest):
     """
     Endpoint pour récupérer les données de carte selon les paramètres.
-    Retourne des données mockées pour le développement.
+    Essaie de charger les données réelles, sinon retourne des données mockées.
     """
-    # TODO: Implémenter la logique de récupération des données climatiques
-    # depuis les projections Météo-France
+    import os
+    from datetime import datetime
+    from climate_data import ClimateDataLoader
+    from indicators import AgroClimateIndicators
     
-    # Générer des données mockées
+    # Essayer de charger les données réelles
+    # Chercher dans plusieurs emplacements possibles
+    possible_dirs = [
+        os.getenv("CLIMATE_DATA_DIR"),  # Variable d'environnement (priorité)
+        os.path.join(os.path.dirname(__file__), "data"),  # backend/data/
+        os.path.join(os.path.dirname(os.path.dirname(__file__)), "data"),  # ./data/ à la racine
+    ]
+    
+    # Vérifier que le répertoire existe ET contient des fichiers .nc
+    use_real_data = False
+    data_directory = None
+    
+    for dir_path in possible_dirs:
+        if not dir_path:
+            continue
+        if os.path.exists(dir_path):
+            nc_files = list(Path(dir_path).glob("*.nc"))
+            print(f"🔍 Vérification: {dir_path} -> {len(nc_files)} fichiers .nc")
+            if len(nc_files) > 0:
+                data_directory = dir_path
+                use_real_data = True
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.info(f"✅ Données réelles trouvées: {len(nc_files)} fichier(s) dans {data_directory}")
+                print(f"✅ Données réelles trouvées: {len(nc_files)} fichier(s) dans {data_directory}")
+                break
+    
+    if not use_real_data:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning("⚠️  Aucun fichier .nc trouvé. Utilisation des données mockées.")
+        logger.info("💡 Placez vos fichiers .nc dans backend/data/ ou ./data/")
+        print("⚠️  Aucun fichier .nc trouvé. Utilisation des données mockées.")
+        print(f"💡 Répertoires vérifiés: {possible_dirs}")
+    
+    if use_real_data:
+        try:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"🔄 Tentative de chargement des données réelles depuis {data_directory}")
+            print(f"🔄 Tentative de chargement des données réelles depuis {data_directory}")
+            
+            loader = ClimateDataLoader(data_directory)
+            indicators = AgroClimateIndicators(loader)
+            
+            # Convertir les dates et ajuster à l'année de la requête
+            # Les dates de la requête peuvent être dans une année différente (ex: 2024)
+            # mais on veut les données pour l'année spécifiée (ex: 2020)
+            original_start = datetime.strptime(request.period.start_date, "%Y-%m-%d").date()
+            original_end = datetime.strptime(request.period.end_date, "%Y-%m-%d").date()
+            
+            # Ajuster les dates à l'année de la requête
+            start_date = original_start.replace(year=request.period.year)
+            end_date = original_end.replace(year=request.period.year)
+            
+            logger.info(f"📅 Dates ajustées: {start_date} à {end_date} (année: {request.period.year})")
+            print(f"📅 Dates ajustées: {start_date} à {end_date} (année: {request.period.year})")
+            
+            # Déterminer le scénario selon l'année
+            if request.period.year <= 2014:
+                experiment = ExperimentType.HISTORICAL
+            else:
+                experiment = ExperimentType.SSP370  # Par défaut
+            
+            logger.info(f"🔬 Scénario sélectionné: {experiment.value} pour l'année {request.period.year}")
+            print(f"🔬 Scénario sélectionné: {experiment.value} pour l'année {request.period.year}")
+            
+            # Utiliser un modèle par défaut (peut être paramétrable plus tard)
+            gcm = "CNRM-ESM2-1"
+            rcm = "CNRM-ALADIN64E1"
+            member = "r1"
+            
+            # Calculer l'indicateur selon le type de carte
+            if request.map_type == "potential":
+                result = indicators.calculate_potential_indicator(
+                    experiment, gcm, rcm, start_date, end_date,
+                    request.parameters.min_rainfall or 80,
+                    request.parameters.min_rainfall_probability or 0.8,
+                    request.parameters.degree_days_threshold or 500,
+                    request.parameters.max_hot_days_30 or 10,
+                    member
+                )
+            elif request.map_type == "drought":
+                result = indicators.calculate_drought_risk(
+                    experiment, gcm, rcm, start_date, end_date,
+                    request.parameters.consecutive_dry_days or 10,
+                    member
+                )
+            elif request.map_type == "excess_water":
+                result = indicators.calculate_excess_water_risk(
+                    experiment, gcm, rcm, start_date, end_date,
+                    request.parameters.max_7day_rainfall or 40,
+                    request.parameters.non_workable_days_threshold or 7,
+                    member
+                )
+            elif request.map_type == "heat_waves":
+                result = indicators.calculate_heat_waves(
+                    experiment, gcm, rcm, start_date, end_date,
+                    request.parameters.max_hot_days_35 or 5,
+                    member
+                )
+            else:
+                result = None
+                print(f"⚠️  Type de carte non géré: {request.map_type}")
+            
+            if result is not None:
+                print(f"✅ Résultat calculé avec succès pour {request.map_type}")
+                # Convertir en GeoJSON
+                geojson_data = indicators.dataarray_to_geojson(result)
+                
+                # Calculer min/max pour la légende
+                values = [f["properties"]["value"] for f in geojson_data["features"]]
+                legend = {
+                    "min": min(values) if values else 0,
+                    "max": max(values) if values else 100,
+                    "unit": "%" if request.map_type == "potential" else "jours" if request.map_type in ["drought", "heat_waves"] else "mm"
+                }
+                
+                return {
+                    "map_type": request.map_type,
+                    "period": request.period.dict(),
+                    "parameters": request.parameters.dict(),
+                    "data": geojson_data,
+                    "legend": legend,
+                    "data_source": "real"
+                }
+            else:
+                print(f"⚠️  Résultat None pour {request.map_type}, basculement vers mock")
+        except Exception as e:
+            # En cas d'erreur, utiliser les données mockées
+            import logging
+            import traceback
+            logger = logging.getLogger(__name__)
+            logger.error(f"❌ Erreur lors du chargement des données réelles: {e}")
+            logger.debug(traceback.format_exc())
+            logger.info("🔄 Basculement vers les données mockées")
+            print(f"❌ Erreur lors du chargement des données réelles: {e}")
+            print(traceback.format_exc())
+            print("🔄 Basculement vers les données mockées")
+    
+    # Générer des données mockées (fallback)
     mock_data = generate_mock_geojson(request.map_type)
     
     # Déterminer la légende selon le type de carte
@@ -149,7 +300,8 @@ async def get_map_data(request: MapRequest):
         "period": request.period.dict(),
         "parameters": request.parameters.dict(),
         "data": mock_data,
-        "legend": legend
+        "legend": legend,
+        "data_source": "mock"
     }
 
 
@@ -196,5 +348,124 @@ async def get_available_years():
     return {
         "years": [2020, 2030, 2040, 2050],
         "current": 2020
+    }
+
+
+@app.get("/api/variables")
+async def get_available_variables():
+    """
+    Retourne la liste des variables climatiques disponibles.
+    """
+    variables = [
+        {
+            "code": var.code.value,
+            "name": var.name,
+            "unit": var.unit,
+            "description": var.description
+        }
+        for var in VARIABLES_INFO.values()
+    ]
+    return {"variables": variables}
+
+
+@app.get("/api/experiments")
+async def get_available_experiments():
+    """
+    Retourne la liste des scénarios climatiques disponibles.
+    """
+    experiment_names = {
+        ExperimentType.HISTORICAL: "Données historiques",
+        ExperimentType.SSP126: "SSP1-2.6 (Scénario optimiste)",
+        ExperimentType.SSP245: "SSP2-4.5 (Scénario intermédiaire)",
+        ExperimentType.SSP370: "SSP3-7.0 (Scénario pessimiste)",
+        ExperimentType.SSP585: "SSP5-8.5 (Scénario très pessimiste)"
+    }
+    
+    experiments = [
+        {"code": exp.value, "name": experiment_names.get(exp, exp.value)}
+        for exp in ExperimentType
+    ]
+    return {"experiments": experiments}
+
+
+@app.get("/api/datasets")
+async def get_available_datasets(
+    variable: Optional[str] = None,
+    experiment: Optional[str] = None,
+    start_year: Optional[int] = None,
+    end_year: Optional[int] = None
+):
+    """
+    Retourne la liste des jeux de données disponibles avec filtres optionnels.
+    
+    Paramètres:
+    - variable: Filtrer par variable (ex: "pr", "tas")
+    - experiment: Filtrer par scénario (ex: "ssp370", "historical")
+    - start_year: Année de début de la période
+    - end_year: Année de fin de la période
+    """
+    datasets = AVAILABLE_DATASETS.copy()
+    
+    if variable:
+        try:
+            var_type = VariableType(variable)
+            datasets = get_datasets_for_variables([var_type])
+        except ValueError:
+            return {"error": f"Variable '{variable}' non reconnue"}
+    
+    if experiment:
+        try:
+            exp_type = ExperimentType(experiment)
+            datasets = [ds for ds in datasets if exp_type in ds.experiment]
+        except ValueError:
+            return {"error": f"Scénario '{experiment}' non reconnu"}
+    
+    if start_year and end_year:
+        datasets = [ds for ds in datasets 
+                   if ds.period_start <= start_year and ds.period_end >= end_year]
+    
+    return {
+        "datasets": [
+            {
+                "gcm": ds.gcm.value,
+                "rcm": ds.rcm.value,
+                "experiments": [e.value for e in ds.experiment],
+                "variables": [v.value for v in ds.variables],
+                "resolution": ds.resolution,
+                "period": f"{ds.period_start}-{ds.period_end}",
+                "frequency": ds.frequency,
+                "member": ds.member,
+                "downscaling_method": ds.downscaling_method.value
+            }
+            for ds in datasets
+        ],
+        "count": len(datasets)
+    }
+
+
+@app.get("/api/datasets/summary")
+async def get_datasets_summary():
+    """
+    Retourne un résumé des données disponibles.
+    """
+    total_datasets = len(AVAILABLE_DATASETS)
+    variables_available = set()
+    experiments_available = set()
+    resolutions_available = set()
+    
+    for ds in AVAILABLE_DATASETS:
+        variables_available.update([v.value for v in ds.variables])
+        experiments_available.update([e.value for e in ds.experiment])
+        resolutions_available.add(ds.resolution)
+    
+    return {
+        "total_datasets": total_datasets,
+        "variables_count": len(variables_available),
+        "variables": sorted(list(variables_available)),
+        "experiments_count": len(experiments_available),
+        "experiments": sorted(list(experiments_available)),
+        "resolutions": sorted(list(resolutions_available)),
+        "data_url": "https://console.object.files.data.gouv.fr/browser/meteofrance-drias/SocleM-Climat-2025%2F",
+        "documentation_url": "https://guides.data.gouv.fr/guide-du-participant-au-hackathon-le-climat-en-donnees/ressources-du-hackathon/donnees/donnees-de-projections-climatiques"
     }
 
