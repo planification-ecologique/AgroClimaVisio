@@ -68,6 +68,41 @@ async def health():
     return {"status": "ok"}
 
 
+@app.get("/debug/db")
+async def debug_db():
+    """Endpoint de debug pour vérifier l'état de la base de données"""
+    debug_info = {
+        "current_directory": os.getcwd(),
+        "file_parent": str(Path(__file__).parent),
+        "duckdb_path_env": os.getenv("DUCKDB_PATH"),
+        "possible_paths": [],
+        "found_path": None,
+        "loader_available": _duckdb_loader is not None
+    }
+    
+    # Liste des chemins possibles
+    possible_paths = []
+    if os.getenv("DUCKDB_PATH"):
+        possible_paths.append(Path(os.getenv("DUCKDB_PATH")) / "climate_data.duckdb")
+    possible_paths.append(Path(__file__).parent / "data" / "climate_data.duckdb")
+    possible_paths.append(Path("/app/backend/data/climate_data.duckdb"))
+    possible_paths.append(Path("backend/data/climate_data.duckdb"))
+    possible_paths.append(Path("data/climate_data.duckdb"))
+    
+    for path in possible_paths:
+        exists = path.exists()
+        debug_info["possible_paths"].append({
+            "path": str(path),
+            "exists": exists,
+            "is_file": path.is_file() if exists else False,
+            "size_mb": round(path.stat().st_size / (1024 * 1024), 2) if exists and path.is_file() else None
+        })
+        if exists and debug_info["found_path"] is None:
+            debug_info["found_path"] = str(path)
+    
+    return debug_info
+
+
 # Initialiser le chargeur DuckDB une seule fois au démarrage
 _duckdb_loader = None
 
@@ -77,21 +112,45 @@ def get_duckdb_loader():
     if _duckdb_loader is None:
         try:
             from duckdb_loader import DuckDBClimateLoader
-            # Chercher la DB dans backend/data/climate_data.duckdb
-            # Support pour Volume Railway via variable d'environnement DUCKDB_PATH
-            if os.getenv("DUCKDB_PATH"):
-                # Si DUCKDB_PATH est défini (Volume Railway), utiliser ce chemin
-                db_path = Path(os.getenv("DUCKDB_PATH")) / "climate_data.duckdb"
-            else:
-                # Sinon, utiliser backend/data/ (développement local)
-                db_path = Path(__file__).parent / "data" / "climate_data.duckdb"
             
-            if db_path.exists():
-                _duckdb_loader = DuckDBClimateLoader(db_path=str(db_path))
+            # Liste des chemins possibles à vérifier (dans l'ordre de priorité)
+            possible_paths = []
+            
+            # 1. Variable d'environnement DUCKDB_PATH (Volume Railway)
+            if os.getenv("DUCKDB_PATH"):
+                possible_paths.append(Path(os.getenv("DUCKDB_PATH")) / "climate_data.duckdb")
+            
+            # 2. backend/data/ (développement local et Railway par défaut)
+            possible_paths.append(Path(__file__).parent / "data" / "climate_data.duckdb")
+            
+            # 3. Chemin absolu /app/backend/data/ (Railway)
+            possible_paths.append(Path("/app/backend/data/climate_data.duckdb"))
+            
+            # 4. Chemin relatif depuis le répertoire courant
+            possible_paths.append(Path("backend/data/climate_data.duckdb"))
+            possible_paths.append(Path("data/climate_data.duckdb"))
+            
+            # Chercher le premier chemin qui existe
+            db_path = None
+            for path in possible_paths:
+                if path.exists():
+                    db_path = path
+                    print(f"✅ Base de données DuckDB trouvée: {db_path}")
+                    break
+            
+            if db_path is None:
+                print("⚠️  Base de données DuckDB non trouvée. Chemins vérifiés:")
+                for path in possible_paths:
+                    print(f"   - {path} (existe: {path.exists()})")
+                print(f"   Répertoire courant: {os.getcwd()}")
+                print(f"   __file__ parent: {Path(__file__).parent}")
+                print(f"   DUCKDB_PATH env: {os.getenv('DUCKDB_PATH')}")
             else:
-                print(f"⚠️  Base de données DuckDB non trouvée: {db_path}")
+                _duckdb_loader = DuckDBClimateLoader(db_path=str(db_path))
         except Exception as e:
             print(f"⚠️  Erreur lors de l'initialisation de DuckDB: {e}")
+            import traceback
+            traceback.print_exc()
     return _duckdb_loader
 
 
