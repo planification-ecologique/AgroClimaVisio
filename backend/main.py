@@ -172,8 +172,9 @@ async def get_monthly_chart_data(request: MonthlyChartRequest):
             # Précipitations: somme mensuelle (convertir kg/m²/s en mm)
             aggregation = "SUM(value * 86400) as monthly_total"
         else:  # tas
-            # Température: moyenne mensuelle (°C)
-            aggregation = "AVG(value) as monthly_avg"
+            # Température: moyenne mensuelle (convertir Kelvin en Celsius)
+            # Les données sont stockées en Kelvin, on soustrait 273.15 pour obtenir °C
+            aggregation = "AVG(value - 273.15) as monthly_avg"
         
         query = f"""
             SELECT 
