@@ -3,6 +3,11 @@ Module pour charger et interroger les données climatiques via DuckDB
 Optimisé pour accès rapide point par point (carré de grille)
 """
 
+from pathlib import Path
+from typing import Optional, Dict, List, Tuple
+from datetime import date, datetime
+import logging
+
 try:
     import duckdb
     import xarray as xr
@@ -10,9 +15,6 @@ try:
     import pandas as pd
     import netCDF4 as nc
     from netCDF4 import num2date
-    from pathlib import Path
-    from typing import Optional, Dict, List, Tuple
-    from datetime import date, datetime
     DUCKDB_AVAILABLE = True
     NETCDF4_AVAILABLE = True
 except ImportError:
@@ -25,7 +27,6 @@ except ImportError:
     nc = None
     num2date = None
 
-import logging
 from models import VariableType, ExperimentType
 
 logger = logging.getLogger(__name__)
