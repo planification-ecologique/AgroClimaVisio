@@ -38,6 +38,11 @@ EXPOSE 8080
 # Utiliser la variable d'environnement PORT de Railway (par défaut 8080)
 ENV PORT=8080
 
+# Configurer PYTHONPATH pour que Python trouve les modules backend
+ENV PYTHONPATH=/app/backend:$PYTHONPATH
+
 # Commande de démarrage avec support de la variable PORT
-CMD sh -c "python -m uvicorn backend.main:app --host 0.0.0.0 --port \${PORT:-8080}"
+# Lancer depuis /app/backend pour que les imports relatifs fonctionnent
+WORKDIR /app/backend
+CMD sh -c "python -m uvicorn main:app --host 0.0.0.0 --port \${PORT:-8080}"
 
