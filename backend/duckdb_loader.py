@@ -10,25 +10,14 @@ from typing import Optional, Dict, List, Tuple
 from datetime import date, datetime
 import logging
 
-try:
-    import duckdb
-    import xarray as xr
-    import numpy as np
-    import pandas as pd
-    import netCDF4 as nc
-    from netCDF4 import num2date
-    DUCKDB_AVAILABLE = True
-    NETCDF4_AVAILABLE = True
-except ImportError as e:
-    print(f"Erreur lors de l'importation des modules: {e}")
-    DUCKDB_AVAILABLE = False
-    NETCDF4_AVAILABLE = False
-    duckdb = None
-    xr = None
-    np = None
-    pd = None
-    nc = None
-    num2date = None
+import duckdb
+import xarray as xr
+import numpy as np
+import pandas as pd
+import netCDF4 as nc
+from netCDF4 import num2date
+DUCKDB_AVAILABLE = True
+NETCDF4_AVAILABLE = True
 
 from models import VariableType, ExperimentType
 
