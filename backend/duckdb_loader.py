@@ -72,20 +72,54 @@ class DuckDBClimateLoader:
     
     def _create_schema(self):
         """Crée le schéma de la base de données si nécessaire"""
-        self.conn.execute("""
-            CREATE TABLE IF NOT EXISTS climate_data (
-                variable VARCHAR NOT NULL,
-                experiment VARCHAR NOT NULL,
-                gcm VARCHAR NOT NULL,
-                rcm VARCHAR NOT NULL,
-                member VARCHAR NOT NULL,
-                lat DOUBLE NOT NULL,
-                lon DOUBLE NOT NULL,
-                time DATE NOT NULL,
-                value DOUBLE NOT NULL,
-                PRIMARY KEY (variable, experiment, gcm, rcm, member, lat, lon, time)
-            );
-        """)
+        # Vérifier si la table existe déjà
+        table_exists = False
+        try:
+            result = self.conn.execute("""
+                SELECT COUNT(*) FROM information_schema.tables 
+                WHERE table_name = 'climate_data'
+            """).fetchone()
+            table_exists = result[0] > 0 if result else False
+        except Exception:
+            # Si information_schema n'est pas disponible, essayer directement
+            try:
+                self.conn.execute("SELECT COUNT(*) FROM climate_data LIMIT 1")
+                table_exists = True
+            except Exception:
+                table_exists = False
+        
+        if not table_exists:
+            # Créer la table avec PRIMARY KEY pour éviter les doublons
+            self.conn.execute("""
+                CREATE TABLE climate_data (
+                    variable VARCHAR NOT NULL,
+                    experiment VARCHAR NOT NULL,
+                    gcm VARCHAR NOT NULL,
+                    rcm VARCHAR NOT NULL,
+                    member VARCHAR NOT NULL,
+                    lat DOUBLE NOT NULL,
+                    lon DOUBLE NOT NULL,
+                    time DATE NOT NULL,
+                    value DOUBLE NOT NULL,
+                    PRIMARY KEY (variable, experiment, gcm, rcm, member, lat, lon, time)
+                );
+            """)
+            logger.info("Table climate_data créée avec PRIMARY KEY pour éviter les doublons")
+        else:
+            # Vérifier si PRIMARY KEY existe déjà
+            try:
+                pk_info = self.conn.execute("""
+                    SELECT COUNT(*) as pk_count
+                    FROM pragma_table_info('climate_data')
+                    WHERE pk > 0
+                """).df()
+                pk_count = pk_info['pk_count'].iloc[0] if not pk_info.empty else 0
+                if pk_count == 0:
+                    logger.warning("⚠️  Table existe sans PRIMARY KEY. Les doublons ne seront pas automatiquement évités.")
+                    logger.warning("   Pour ajouter la PRIMARY KEY, supprimez les doublons existants puis recréez la table.")
+            except Exception:
+                # Si pragma_table_info n'est pas disponible, on continue
+                pass
         
         # Créer les index pour performance
         try:
@@ -441,8 +475,24 @@ class DuckDBClimateLoader:
                     df_chunk = pd.DataFrame(rows_buffer)
                     # Enregistrer le DataFrame comme table temporaire
                     self.conn.register('temp_chunk', df_chunk)
-                    # Insérer depuis la table temporaire
-                    self.conn.execute("INSERT INTO climate_data SELECT * FROM temp_chunk")
+                    # Insérer depuis la table temporaire en ignorant les doublons
+                    # ON CONFLICT DO NOTHING évite les doublons si le fichier est réimporté
+                    if skip_duplicates:
+                        try:
+                            self.conn.execute("""
+                                INSERT INTO climate_data 
+                                SELECT * FROM temp_chunk
+                                ON CONFLICT DO NOTHING
+                            """)
+                        except Exception as e:
+                            # Si ON CONFLICT n'est pas supporté (table sans PRIMARY KEY), utiliser INSERT normal
+                            if "CONFLICT" in str(e) or "primary key" in str(e).lower():
+                                logger.warning(f"ON CONFLICT non supporté, insertion normale (doublons possibles): {e}")
+                                self.conn.execute("INSERT INTO climate_data SELECT * FROM temp_chunk")
+                            else:
+                                raise
+                    else:
+                        self.conn.execute("INSERT INTO climate_data SELECT * FROM temp_chunk")
                     # Nettoyer la table temporaire
                     self.conn.unregister('temp_chunk')
                     total_rows += len(rows_buffer)
@@ -462,19 +512,23 @@ class DuckDBClimateLoader:
         if rows_buffer:
             df_chunk = pd.DataFrame(rows_buffer)
             self.conn.register('temp_chunk', df_chunk)
-            # Insérer en ignorant les doublons
-            try:
-                self.conn.execute("""
-                    INSERT INTO climate_data 
-                    SELECT * FROM temp_chunk
-                    ON CONFLICT DO NOTHING
-                """)
-            except Exception as e:
-                # Si ON CONFLICT n'est pas supporté, utiliser INSERT OR IGNORE
-                if "ON CONFLICT" in str(e) or "syntax error" in str(e).lower():
-                    self.conn.execute("INSERT OR IGNORE INTO climate_data SELECT * FROM temp_chunk")
-                else:
-                    raise
+            # Insérer en ignorant les doublons si demandé
+            if skip_duplicates:
+                try:
+                    self.conn.execute("""
+                        INSERT INTO climate_data 
+                        SELECT * FROM temp_chunk
+                        ON CONFLICT DO NOTHING
+                    """)
+                except Exception as e:
+                    # Si ON CONFLICT n'est pas supporté (table sans PRIMARY KEY), utiliser INSERT normal
+                    if "CONFLICT" in str(e) or "primary key" in str(e).lower():
+                        logger.warning(f"ON CONFLICT non supporté, insertion normale (doublons possibles): {e}")
+                        self.conn.execute("INSERT INTO climate_data SELECT * FROM temp_chunk")
+                    else:
+                        raise
+            else:
+                self.conn.execute("INSERT INTO climate_data SELECT * FROM temp_chunk")
             self.conn.unregister('temp_chunk')
             total_rows += len(rows_buffer)
         
