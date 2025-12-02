@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 import random
 import math
@@ -14,6 +14,7 @@ from datasets import (
     AVAILABLE_DATASETS, get_datasets_for_variables, 
     get_datasets_for_experiment, get_datasets_for_period
 )
+from points_config import get_all_points
 
 app = FastAPI(title="AgroClimaVisio API", version="1.0.0")
 
@@ -62,6 +63,204 @@ async def root():
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+# Initialiser le chargeur DuckDB une seule fois au démarrage
+_duckdb_loader = None
+
+def get_duckdb_loader():
+    """Obtient ou crée le chargeur DuckDB"""
+    global _duckdb_loader
+    if _duckdb_loader is None:
+        try:
+            from duckdb_loader import DuckDBClimateLoader
+            db_path = Path(__file__).parent / "climate_data.duckdb"
+            if db_path.exists():
+                _duckdb_loader = DuckDBClimateLoader(db_path=str(db_path))
+            else:
+                print(f"⚠️  Base de données DuckDB non trouvée: {db_path}")
+        except Exception as e:
+            print(f"⚠️  Erreur lors de l'initialisation de DuckDB: {e}")
+    return _duckdb_loader
+
+
+class MonthlyRainfallRequest(BaseModel):
+    """Requête pour obtenir les données de pluie mensuelle"""
+    start_date: str  # Format: "YYYY-MM-DD"
+    end_date: str    # Format: "YYYY-MM-DD"
+    experiment: Optional[str] = "ssp370"  # Par défaut ssp370
+    gcm: Optional[str] = None  # Si None, utilise tous les GCM disponibles
+    rcm: Optional[str] = None  # Si None, utilise tous les RCM disponibles
+
+
+@app.post("/api/rainfall/monthly")
+async def get_monthly_rainfall(request: MonthlyRainfallRequest):
+    """
+    Récupère les données de somme de pluie mensuelle pour les 6 points représentatifs
+    (3 points Beauce + 3 points Bretagne) sur une période donnée.
+    
+    Retourne les données agrégées par mois pour chaque point.
+    """
+    loader = get_duckdb_loader()
+    if loader is None:
+        return {
+            "error": "Base de données DuckDB non disponible",
+            "points": []
+        }
+    
+    try:
+        from models import VariableType, ExperimentType
+        
+        # Convertir les dates (gérer les cas où c'est déjà un objet date ou une chaîne)
+        if isinstance(request.start_date, str):
+            start_date = datetime.strptime(request.start_date, "%Y-%m-%d").date()
+        elif isinstance(request.start_date, date):
+            start_date = request.start_date
+        else:
+            start_date = datetime.fromisoformat(str(request.start_date)).date()
+        
+        if isinstance(request.end_date, str):
+            end_date = datetime.strptime(request.end_date, "%Y-%m-%d").date()
+        elif isinstance(request.end_date, date):
+            end_date = request.end_date
+        else:
+            end_date = datetime.fromisoformat(str(request.end_date)).date()
+        
+        # Convertir l'expérience
+        experiment_map = {
+            "historical": ExperimentType.HISTORICAL,
+            "ssp370": ExperimentType.SSP370,
+            "ssp585": ExperimentType.SSP585,
+            "ssp245": ExperimentType.SSP245,
+            "ssp126": ExperimentType.SSP126,
+        }
+        experiment = experiment_map.get(request.experiment.lower(), ExperimentType.SSP370)
+        
+        # Points représentatifs depuis la configuration centralisée
+        all_points = get_all_points(format="dict")
+        
+        # Construire la requête SQL pour obtenir les sommes mensuelles
+        # Les valeurs sont stockées telles quelles depuis NetCDF
+        # Pour les précipitations, elles peuvent être en kg/m²/s ou mm/jour selon le fichier
+        # On fait SUM pour obtenir le total mensuel
+        # Si les valeurs sont en kg/m²/s, on multiplie par 86400 pour convertir en mm/jour avant SUM
+        # Sinon, on suppose qu'elles sont déjà en mm/jour
+        query = """
+            SELECT 
+                lat,
+                lon,
+                EXTRACT(YEAR FROM time) as year,
+                EXTRACT(MONTH FROM time) as month,
+                SUM(value * 86400) as monthly_total,
+                COUNT(*) as days_count
+            FROM climate_data
+            WHERE variable = 'pr'
+              AND experiment = ?
+              AND time >= ?
+              AND time <= ?
+        """
+        
+        params = [experiment.value, start_date, end_date]
+        
+        # Ajouter filtres GCM/RCM si spécifiés
+        if request.gcm:
+            query += " AND gcm = ?"
+            params.append(request.gcm)
+        
+        if request.rcm:
+            query += " AND rcm = ?"
+            params.append(request.rcm)
+        
+        # Filtrer pour les points spécifiques (avec tolérance de 0.1 degré)
+        # Optimisation: utiliser une condition combinée pour meilleure performance
+        point_conditions = []
+        for point in all_points:
+            point_conditions.append(f"(ABS(lat - {point['lat']}) < 0.1 AND ABS(lon - {point['lon']}) < 0.1)")
+        
+        query += f" AND ({' OR '.join(point_conditions)})"
+        
+        query += """
+            GROUP BY lat, lon, year, month
+            ORDER BY lat, lon, year, month
+        """
+        
+        result_df = loader.conn.execute(query, params).df()
+        
+        if result_df.empty:
+            return {
+                "error": "Aucune donnée trouvée pour cette période",
+                "points": []
+            }
+        
+        # Convertir en format JSON pour le frontend
+        # Grouper par point et créer les séries temporelles
+        data_by_point = {}
+        
+        for _, row in result_df.iterrows():
+            # Trouver le point le plus proche
+            point_key = None
+            min_dist = float('inf')
+            for point in all_points:
+                dist = abs(row['lat'] - point['lat']) + abs(row['lon'] - point['lon'])
+                if dist < min_dist:
+                    min_dist = dist
+                    point_key = point['name']
+            
+            if point_key not in data_by_point:
+                data_by_point[point_key] = {
+                    "name": point_key,
+                    "lat": float(row['lat']),
+                    "lon": float(row['lon']),
+                    "data": []
+                }
+            
+            # Les valeurs sont stockées en mm/jour dans DuckDB (déjà converties lors de l'import)
+            # SUM donne le total mensuel en mm
+            monthly_total_mm = float(row['monthly_total'])
+            
+            data_by_point[point_key]["data"].append({
+                "year": int(row['year']),
+                "month": int(row['month']),
+                "date": f"{int(row['year'])}-{int(row['month']):02d}-01",
+                "value": round(monthly_total_mm, 2),
+                "days_count": int(row['days_count'])
+            })
+        
+        # Convertir en liste et trier
+        result_data = list(data_by_point.values())
+        for point_data in result_data:
+            point_data["data"].sort(key=lambda x: (x["year"], x["month"]))
+        
+        return {
+            "start_date": request.start_date,
+            "end_date": request.end_date,
+            "experiment": request.experiment,
+            "points": result_data
+        }
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {
+            "error": str(e),
+            "points": []
+        }
+
+
+# Initialiser le chargeur DuckDB une seule fois au démarrage
+_duckdb_loader = None
+
+def get_duckdb_loader():
+    """Obtient ou crée le chargeur DuckDB"""
+    global _duckdb_loader
+    if _duckdb_loader is None:
+        from duckdb_loader import DuckDBClimateLoader
+        db_path = Path(__file__).parent / "climate_data.duckdb"
+        if db_path.exists():
+            _duckdb_loader = DuckDBClimateLoader(db_path=str(db_path))
+        else:
+            print(f"⚠️  Base de données DuckDB non trouvée: {db_path}")
+    return _duckdb_loader
 
 
 def generate_mock_geojson(map_type: str, center_lon: float = 1.4437, center_lat: float = 43.6047):

@@ -1,3 +1,5 @@
+import { Link, useLocation } from 'react-router-dom';
+
 interface HeaderProps {
   selectedYear: number;
   onYearChange: (year: number) => void;
@@ -17,10 +19,26 @@ export default function Header({
   mapStyle,
   onMapStyleChange
 }: HeaderProps) {
+  const location = useLocation();
+  
   return (
     <header className="app-header">
       <div className="header-content">
         <h1>AgroClimaVisio</h1>
+        <nav className="header-nav">
+          <Link 
+            to="/" 
+            className={location.pathname === '/' ? 'active' : ''}
+          >
+            Cartes
+          </Link>
+          <Link 
+            to="/rainfall" 
+            className={location.pathname === '/rainfall' ? 'active' : ''}
+          >
+            Précipitations
+          </Link>
+        </nav>
         <div className="header-controls">
           <div className="year-selector">
             <label>Année moyenne:</label>

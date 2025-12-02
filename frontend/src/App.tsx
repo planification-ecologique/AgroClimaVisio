@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Header from './components/Header';
 import ParametersPanel from './components/ParametersPanel';
 import Map from './components/Map';
+import RainfallPage from './pages/RainfallPage';
 import type { MapRequest, MapData, Preset } from './types';
 import './App.css';
 
@@ -75,37 +77,47 @@ function App() {
   };
 
   return (
-    <div className="app">
-      <Header
-        selectedYear={selectedYear}
-        onYearChange={(year) => {
-          setSelectedYear(year);
-          if (mapRequest) {
-            setMapRequest({
-              ...mapRequest,
-              period: { ...mapRequest.period, year }
-            });
+    <BrowserRouter>
+      <Routes>
+        <Route path="/rainfall" element={<RainfallPage />} />
+        <Route
+          path="/"
+          element={
+            <div className="app">
+              <Header
+                selectedYear={selectedYear}
+                onYearChange={(year) => {
+                  setSelectedYear(year);
+                  if (mapRequest) {
+                    setMapRequest({
+                      ...mapRequest,
+                      period: { ...mapRequest.period, year }
+                    });
+                  }
+                }}
+                availableYears={availableYears}
+                comparisonMode={comparisonMode}
+                onComparisonModeToggle={() => setComparisonMode(!comparisonMode)}
+                mapStyle={mapStyle}
+                onMapStyleChange={setMapStyle}
+              />
+              <div className="app-content">
+                <div className="parameters-sidebar">
+                  <ParametersPanel
+                    onParametersChange={handleParametersChange}
+                    presets={presets}
+                    availableYears={availableYears}
+                  />
+                </div>
+                <div className="map-area">
+                  <Map mapData={mapData} isLoading={isLoading} mapStyle={mapStyle} />
+                </div>
+              </div>
+            </div>
           }
-        }}
-        availableYears={availableYears}
-        comparisonMode={comparisonMode}
-        onComparisonModeToggle={() => setComparisonMode(!comparisonMode)}
-        mapStyle={mapStyle}
-        onMapStyleChange={setMapStyle}
-      />
-      <div className="app-content">
-        <div className="parameters-sidebar">
-          <ParametersPanel
-            onParametersChange={handleParametersChange}
-            presets={presets}
-            availableYears={availableYears}
-          />
-        </div>
-        <div className="map-area">
-          <Map mapData={mapData} isLoading={isLoading} mapStyle={mapStyle} />
-        </div>
-      </div>
-    </div>
+        />
+      </Routes>
+    </BrowserRouter>
   );
 }
 

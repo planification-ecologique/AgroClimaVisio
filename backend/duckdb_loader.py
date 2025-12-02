@@ -9,6 +9,7 @@ try:
     import numpy as np
     import pandas as pd
     import netCDF4 as nc
+    from netCDF4 import num2date
     from pathlib import Path
     from typing import Optional, Dict, List, Tuple
     from datetime import date, datetime
@@ -22,6 +23,7 @@ except ImportError:
     np = None
     pd = None
     nc = None
+    num2date = None
 
 import logging
 from models import VariableType, ExperimentType
@@ -101,7 +103,11 @@ class DuckDBClimateLoader:
         gcm: str,
         rcm: str,
         member: str = "r1",
-        chunk_size: int = 5000  # Réduit pour économiser la mémoire
+        chunk_size: int = 5000,  # Réduit pour économiser la mémoire
+        lat_filter: Optional[float] = None,  # Filtrer par latitude spécifique (ou liste)
+        lon_filter: Optional[float] = None,  # Filtrer par longitude spécifique (ou liste)
+        start_year: Optional[int] = None,  # Filtrer par année de début
+        end_year: Optional[int] = None  # Filtrer par année de fin
     ) -> int:
         """
         Importe un fichier NetCDF dans DuckDB de manière optimisée en mémoire.
@@ -173,13 +179,32 @@ class DuckDBClimateLoader:
             
             # Obtenir les dimensions directement depuis netCDF4
             print(f"   📊 Lecture des dimensions...")
-            time_coords = nc_time[:]
+            time_coords_raw = nc_time[:]  # Valeurs brutes (jours depuis 1850-01-01)
             lat_coords_raw = nc_lat[:]
             lon_coords_raw = nc_lon[:]
+            
+            # Convertir les dates NetCDF en dates Python
+            # Les dates NetCDF sont en "days since 1850-01-01"
+            time_units = nc_time.units
+            time_calendar = getattr(nc_time, 'calendar', 'standard')
+            print(f"   📅 Unités de temps: {time_units}, calendrier: {time_calendar}")
+            
+            # Convertir toutes les dates une seule fois
+            time_coords_dates = num2date(time_coords_raw, units=time_units, calendar=time_calendar)
+            # Convertir cftime en objets date Python pour faciliter le filtrage
+            time_coords = []
+            for d in time_coords_dates:
+                if hasattr(d, 'date'):  # Objet datetime Python standard
+                    time_coords.append(d.date())
+                elif hasattr(d, 'year'):  # Objet cftime
+                    time_coords.append(date(d.year, d.month, d.day))
+                else:
+                    time_coords.append(pd.to_datetime(str(d)).date())
             
             # Obtenir la shape de la variable
             var_shape = nc_var.shape
             print(f"   📐 Shape de la variable: {var_shape}")
+            print(f"   📅 Période: {time_coords[0]} à {time_coords[-1]}")
         else:
             # Fallback sur xarray
             for name in var_names.get(variable, [variable.value]):
@@ -250,16 +275,93 @@ class DuckDBClimateLoader:
             lon_coords_2d = np.array([[to_float(lon_coords_raw[i, j]) for j in range(n_lons)] for i in range(n_lats)])
             print(f"   ✅ Coordonnées pré-calculées")
         
+        # Filtrer les pas de temps si nécessaire
+        time_indices_to_process = list(range(len(time_coords)))
+        if start_year is not None or end_year is not None:
+            print(f"   📅 Filtrage temporel: {start_year or 'début'} - {end_year or 'fin'}...")
+            filtered_indices = []
+            for t_idx, time_date in enumerate(time_coords):
+                # time_coords est déjà une liste de date objects
+                year = time_date.year
+                if start_year is not None and year < start_year:
+                    continue
+                if end_year is not None and year > end_year:
+                    continue
+                filtered_indices.append(t_idx)
+            
+            time_indices_to_process = filtered_indices
+            if len(time_indices_to_process) > 0:
+                first_date = time_coords[time_indices_to_process[0]]
+                last_date = time_coords[time_indices_to_process[-1]]
+                print(f"   ✅ {len(time_indices_to_process)}/{len(time_coords)} pas de temps sélectionnés ({first_date} à {last_date})")
+            else:
+                print(f"   ⚠️  Aucun pas de temps ne correspond au filtre !")
+                print(f"   📅 Période disponible: {time_coords[0]} à {time_coords[-1]}")
+        
+        # Gérer plusieurs points géographiques si filtrage spatial
+        # Convertir en liste si un seul point fourni
+        if lat_filter is not None and lon_filter is not None:
+            if not isinstance(lat_filter, (list, tuple)):
+                lat_filter = [lat_filter]
+                lon_filter = [lon_filter]
+        
+        # Trouver les points géographiques les plus proches dans la grille
+        points_to_process = []  # Liste de (lat_idx, lon_idx, lat_val, lon_val, point_name)
+        if lat_filter is not None and lon_filter is not None:
+            print(f"   📍 Filtrage spatial: {len(lat_filter)} point(s)...")
+            for point_idx, (target_lat, target_lon) in enumerate(zip(lat_filter, lon_filter)):
+                # Trouver le point le plus proche dans la grille
+                min_dist = float('inf')
+                best_lat_idx = None
+                best_lon_idx = None
+                
+                for lat_idx in range(n_lats):
+                    for lon_idx in range(n_lons):
+                        if lat_coords_2d is not None:
+                            lat_val = lat_coords_2d[lat_idx, lon_idx]
+                            lon_val = lon_coords_2d[lat_idx, lon_idx]
+                        else:
+                            lat_val = to_float(lat_coords_raw[lat_idx])
+                            lon_val = to_float(lon_coords_raw[lon_idx])
+                        
+                        # Distance euclidienne simple
+                        dist = np.sqrt((lat_val - target_lat)**2 + (lon_val - target_lon)**2)
+                        if dist < min_dist:
+                            min_dist = dist
+                            best_lat_idx = lat_idx
+                            best_lon_idx = lon_idx
+                
+                if best_lat_idx is not None:
+                    if lat_coords_2d is not None:
+                        actual_lat = lat_coords_2d[best_lat_idx, best_lon_idx]
+                        actual_lon = lon_coords_2d[best_lat_idx, best_lon_idx]
+                    else:
+                        actual_lat = to_float(lat_coords_raw[best_lat_idx])
+                        actual_lon = to_float(lon_coords_raw[best_lon_idx])
+                    
+                    points_to_process.append((best_lat_idx, best_lon_idx, actual_lat, actual_lon))
+                    print(f"   ✅ Point {point_idx+1}: ({target_lat:.4f}, {target_lon:.4f}) → ({actual_lat:.4f}, {actual_lon:.4f}) à {min_dist:.4f}°")
+        
         print(f"   🚀 Début de l'importation...")
         
         total_rows = 0
         rows_buffer = []
         
-        # Traiter pas de temps par pas de temps pour minimiser la mémoire
-        for t_idx, time_val in enumerate(time_coords):
-            if t_idx % 100 == 0 or t_idx == 0:
-                logger.info(f"Traitement du pas de temps {t_idx+1}/{n_times}...")
-                print(f"   ⏳ Traitement du pas de temps {t_idx+1}/{n_times}...")
+        # Traiter seulement les pas de temps filtrés
+        n_filtered_times = len(time_indices_to_process)
+        if n_filtered_times == 0:
+            logger.warning("Aucun pas de temps à traiter après filtrage")
+            if nc_file:
+                nc_file.close()
+            elif 'ds' in locals():
+                ds.close()
+            return 0
+        
+        for idx, t_idx in enumerate(time_indices_to_process):
+            time_date = time_coords[t_idx]  # Déjà un objet date
+            if idx % 100 == 0 or idx == 0:
+                logger.info(f"Traitement du pas de temps {idx+1}/{n_filtered_times} (t_idx={t_idx+1}/{n_times})...")
+                print(f"   ⏳ Traitement du pas de temps {idx+1}/{n_filtered_times} ({time_date})...")
             
             # Charger seulement UN pas de temps à la fois
             # Utiliser netCDF4 pour un accès direct optimisé au slice
@@ -279,61 +381,61 @@ class DuckDBClimateLoader:
                 time_slice = data_array.isel(time=t_idx)
                 values_2d = time_slice.load().values  # Shape: (lat, lon) ou (y, x)
             
-            # Convertir la date une seule fois
-            if hasattr(time_val, 'date'):
-                time_date = time_val.date()
-            elif hasattr(time_val, 'item'):
-                time_date = pd.to_datetime(time_val.item()).date()
-            else:
-                time_date = pd.to_datetime(time_val).date()
+            # time_date est déjà un objet date Python (converti plus haut)
             
-            # Itérer sur les indices de la grille
-            for lat_idx in range(n_lats):
-                for lon_idx in range(n_lons):
-                    value = float(values_2d[lat_idx, lon_idx])
+            # Itérer sur les points à traiter (ou toute la grille si pas de filtre)
+            if points_to_process:
+                # Traiter seulement les points spécifiés
+                points_iter = [(pt[0], pt[1]) for pt in points_to_process]
+            else:
+                # Traiter toute la grille
+                points_iter = [(lat_idx, lon_idx) for lat_idx in range(n_lats) for lon_idx in range(n_lons)]
+            
+            for lat_idx, lon_idx in points_iter:
+                value = float(values_2d[lat_idx, lon_idx])
+                
+                # Ignorer les NaN
+                if np.isnan(value):
+                    continue
+                
+                # Extraire les coordonnées lat/lon pour ce point de grille
+                if lat_coords_2d is not None:
+                    # Grille 2D: utiliser les coordonnées pré-calculées
+                    lat_val = float(lat_coords_2d[lat_idx, lon_idx])
+                    lon_val = float(lon_coords_2d[lat_idx, lon_idx])
+                else:
+                    # Coordonnées 1D: utiliser les indices directement
+                    lat_val = to_float(lat_coords_raw[lat_idx])
+                    lon_val = to_float(lon_coords_raw[lon_idx])
+                
+                rows_buffer.append({
+                    'variable': variable.value,
+                    'experiment': experiment.value,
+                    'gcm': gcm,
+                    'rcm': rcm,
+                    'member': member,
+                    'lat': lat_val,
+                    'lon': lon_val,
+                    'time': time_date,
+                    'value': value
+                })
+                
+                # Insérer par batch pour éviter d'accumuler trop en mémoire
+                if len(rows_buffer) >= chunk_size:
+                    df_chunk = pd.DataFrame(rows_buffer)
+                    # Enregistrer le DataFrame comme table temporaire
+                    self.conn.register('temp_chunk', df_chunk)
+                    # Insérer depuis la table temporaire
+                    self.conn.execute("INSERT INTO climate_data SELECT * FROM temp_chunk")
+                    # Nettoyer la table temporaire
+                    self.conn.unregister('temp_chunk')
+                    total_rows += len(rows_buffer)
+                    rows_buffer = []
                     
-                    # Ignorer les NaN
-                    if np.isnan(value):
-                        continue
-                    
-                    # Extraire les coordonnées lat/lon pour ce point de grille
-                    if lat_coords_2d is not None:
-                        # Grille 2D: utiliser les coordonnées pré-calculées
-                        lat_val = float(lat_coords_2d[lat_idx, lon_idx])
-                        lon_val = float(lon_coords_2d[lat_idx, lon_idx])
-                    else:
-                        # Coordonnées 1D: utiliser les indices directement
-                        lat_val = to_float(lat_coords_raw[lat_idx])
-                        lon_val = to_float(lon_coords_raw[lon_idx])
-                    
-                    rows_buffer.append({
-                        'variable': variable.value,
-                        'experiment': experiment.value,
-                        'gcm': gcm,
-                        'rcm': rcm,
-                        'member': member,
-                        'lat': lat_val,
-                        'lon': lon_val,
-                        'time': time_date,
-                        'value': value
-                    })
-                    
-                    # Insérer par batch pour éviter d'accumuler trop en mémoire
-                    if len(rows_buffer) >= chunk_size:
-                        df_chunk = pd.DataFrame(rows_buffer)
-                        # Enregistrer le DataFrame comme table temporaire
-                        self.conn.register('temp_chunk', df_chunk)
-                        # Insérer depuis la table temporaire
-                        self.conn.execute("INSERT INTO climate_data SELECT * FROM temp_chunk")
-                        # Nettoyer la table temporaire
-                        self.conn.unregister('temp_chunk')
-                        total_rows += len(rows_buffer)
-                        rows_buffer = []
-                        
-                        # Afficher progression
-                        if total_rows % (chunk_size * 10) == 0:
-                            logger.info(f"  Progression: {total_rows:,} lignes importées...")
-                            print(f"   💾 {total_rows:,} lignes importées dans la base...")
+                    # Afficher progression
+                    if total_rows % (chunk_size * 10) == 0:
+                        logger.info(f"  Progression: {total_rows:,} lignes importées...")
+                        print(f"   💾 {total_rows:,} lignes importées dans la base...")
             
             # Libérer la mémoire après chaque pas de temps
             if time_slice is not None:
