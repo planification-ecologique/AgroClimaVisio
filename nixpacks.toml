@@ -9,6 +9,6 @@ cmds = []
 
 [start]
 # Configurer LD_LIBRARY_PATH pour trouver libstdc++.so.6 requis par DuckDB
-# Chercher dans les chemins Nix standards
-cmd = "export LD_LIBRARY_PATH=$(find /nix/store -name 'libstdc++.so.6' -type f 2>/dev/null | head -1 | xargs dirname 2>/dev/null || echo ''):$LD_LIBRARY_PATH && cd backend && poetry run uvicorn main:app --host 0.0.0.0 --port $PORT"
+# Chercher dans /nix/store pour les bibliothèques GCC au démarrage
+cmd = "GCC_LIB=$(find /nix/store -path '*/gcc*/lib/libstdc++.so.6' 2>/dev/null | head -1 | xargs dirname 2>/dev/null); export LD_LIBRARY_PATH=${GCC_LIB}:${LD_LIBRARY_PATH}; cd backend && poetry run uvicorn main:app --host 0.0.0.0 --port $PORT"
 
