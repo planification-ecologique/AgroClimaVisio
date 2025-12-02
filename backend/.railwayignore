@@ -1,0 +1,24 @@
+# Fichiers à ignorer lors du déploiement Railway
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.coverage
+htmlcov/
+.env
+.env.local
+*.db
+*.duckdb
+data/
+tests/
+outils/
+*.md
+!README.md
+

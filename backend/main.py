@@ -6,6 +6,7 @@ from datetime import date, datetime
 from pathlib import Path
 import random
 import math
+import os
 
 from models import (
     VariableType, ExperimentType, VARIABLES_INFO, VariableInfo
@@ -19,9 +20,11 @@ from points_config import get_all_points
 app = FastAPI(title="AgroClimaVisio API", version="1.0.0")
 
 # CORS middleware pour permettre les requêtes depuis le frontend
+# Permet les origines depuis les variables d'environnement ou localhost par défaut
+allowed_origins = os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],  # Port par défaut de Vite
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
