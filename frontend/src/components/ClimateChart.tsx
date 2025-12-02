@@ -7,7 +7,8 @@ import {
   CartesianGrid,
   Tooltip,
   Legend,
-  ResponsiveContainer
+  ResponsiveContainer,
+  ReferenceLine
 } from 'recharts';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -141,9 +142,9 @@ export default function ClimateChart({ startDate, endDate, experiment = 'ssp370'
 
   // Transformer les données pour le graphique
   // Créer un objet avec une entrée par date, avec une valeur pour chaque point
-  const chartDataMap = new Map<string, Record<string, number>>();
+  const chartDataMap = new Map<string, Record<string, number | string>>();
 
-  data.points.forEach((point, index) => {
+  data.points.forEach((point) => {
     point.data.forEach((dataPoint) => {
       const dateKey = dataPoint.date;
       if (!chartDataMap.has(dateKey)) {
@@ -154,11 +155,13 @@ export default function ClimateChart({ startDate, endDate, experiment = 'ssp370'
   });
 
   const chartData = Array.from(chartDataMap.values()).sort((a, b) => 
-    a.date.localeCompare(b.date)
+    String(a.date).localeCompare(String(b.date))
   );
 
   const unit = variableUnits[data.variable as keyof typeof variableUnits] || '';
   const label = variableLabels[data.variable as keyof typeof variableLabels] || 'Données';
+  const isPrecipitation = data.variable === 'pr';
+  const referenceLineValue = isPrecipitation ? 50 : null;
 
   return (
     <div style={{ width: '100%', height: '500px', padding: '20px' }}>
@@ -167,6 +170,11 @@ export default function ClimateChart({ startDate, endDate, experiment = 'ssp370'
       </h2>
       <p style={{ marginBottom: '20px', color: '#666' }}>
         Période: {new Date(data.start_date).toLocaleDateString('fr-FR')} - {new Date(data.end_date).toLocaleDateString('fr-FR')}
+        {isPrecipitation && (
+          <span style={{ marginLeft: '20px', fontSize: '14px', color: '#888' }}>
+            (Ligne de référence: 50mm)
+          </span>
+        )}
       </p>
       
       <ResponsiveContainer width="100%" height="100%">
@@ -192,6 +200,14 @@ export default function ClimateChart({ startDate, endDate, experiment = 'ssp370'
             labelFormatter={(label) => `Date: ${label}`}
           />
           <Legend />
+          {isPrecipitation && referenceLineValue !== null && (
+            <ReferenceLine 
+              y={referenceLineValue} 
+              stroke="#ff7300" 
+              strokeDasharray="5 5"
+              label={{ value: "50mm", position: "right", fill: "#ff7300" }}
+            />
+          )}
           {data.points.map((point, index) => (
             <Line
               key={point.name}
