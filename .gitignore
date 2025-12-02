@@ -51,3 +51,4 @@ Thumbs.db
 build/
 /backend/data
 /docs/temp
+backend/climate_data.duckdb
