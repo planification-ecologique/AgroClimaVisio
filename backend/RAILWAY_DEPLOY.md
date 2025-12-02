@@ -13,9 +13,11 @@ Ce guide explique comment déployer l'API AgroClimaVisio sur Railway.
 ### 1. Préparer le projet
 
 Les fichiers de configuration sont déjà en place :
-- `Procfile` : Définit comment démarrer l'application
-- `railway.json` : Configuration Railway
-- `pyproject.toml` : Dépendances Python avec Poetry
+- `Procfile` (à la racine) : Définit comment démarrer l'application
+- `railway.json` (à la racine) : Configuration Railway
+- `backend/pyproject.toml` : Dépendances Python avec Poetry
+
+**Important** : Railway cherche les fichiers de configuration à la racine du repository. Le `Procfile` et `railway.json` sont donc à la racine et pointent vers le dossier `backend/`.
 
 ### 2. Créer un projet Railway
 
@@ -24,7 +26,8 @@ Les fichiers de configuration sont déjà en place :
 3. Cliquez sur "New Project"
 4. Sélectionnez "Deploy from GitHub repo"
 5. Choisissez votre repository AgroClimaVisio
-6. Railway détectera automatiquement le dossier `backend/`
+6. Railway utilisera automatiquement le `Procfile` et `railway.json` à la racine
+7. **Important** : Dans les paramètres du service, assurez-vous que le "Root Directory" est laissé vide (ou `/`) - Railway utilisera le `Procfile` qui change de répertoire vers `backend/`
 
 ### 3. Configurer les variables d'environnement
 
@@ -80,13 +83,14 @@ Mettez à jour `VITE_API_URL` dans votre frontend pour pointer vers l'URL Railwa
 ## Structure des fichiers
 
 ```
-backend/
-├── Procfile              # Commande de démarrage Railway
-├── railway.json          # Configuration Railway
-├── .railwayignore        # Fichiers à ignorer
-├── pyproject.toml        # Dépendances Poetry
-├── main.py               # Application FastAPI
-└── climate_data.duckdb   # Base de données (à téléverser)
+/
+├── Procfile              # Commande de démarrage Railway (à la racine)
+├── railway.json          # Configuration Railway (à la racine)
+└── backend/
+    ├── .railwayignore    # Fichiers à ignorer
+    ├── pyproject.toml    # Dépendances Poetry
+    ├── main.py           # Application FastAPI
+    └── climate_data.duckdb   # Base de données (à téléverser)
 ```
 
 ## Notes importantes

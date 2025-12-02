@@ -1,0 +1,12 @@
+[phases.setup]
+nixPkgs = ["python39", "poetry"]
+
+[phases.install]
+cmds = ["cd backend && poetry install --no-dev"]
+
+[phases.build]
+cmds = []
+
+[start]
+cmd = "cd backend && poetry run uvicorn main:app --host 0.0.0.0 --port $PORT"
+
