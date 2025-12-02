@@ -20,7 +20,7 @@ try:
     DUCKDB_AVAILABLE = True
     NETCDF4_AVAILABLE = True
 except ImportError as e:
-    logger.error(f"Erreur lors de l'importation des modules: {e}")
+    print(f"Erreur lors de l'importation des modules: {e}")
     DUCKDB_AVAILABLE = False
     NETCDF4_AVAILABLE = False
     duckdb = None
