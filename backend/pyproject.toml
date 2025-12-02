@@ -1,3 +1,12 @@
+[project]
+name = "agroclimavisio-backend"
+version = "1.0.0"
+description = "Backend FastAPI pour AgroClimaVisio"
+authors = [{name = "Your Name", email = "you@example.com"}]
+readme = "README.md"
+requires-python = ">=3.9"
+dynamic = ["dependencies"]
+
 [tool.poetry]
 name = "agroclimavisio-backend"
 version = "1.0.0"
