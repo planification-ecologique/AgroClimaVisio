@@ -10,24 +10,12 @@ from typing import Optional, Dict, List, Tuple
 from datetime import date, datetime
 import logging
 
-try:
-    import duckdb
-    import xarray as xr
-    import numpy as np
-    import pandas as pd
-    import netCDF4 as nc
-    from netCDF4 import num2date
-    DUCKDB_AVAILABLE = True
-    NETCDF4_AVAILABLE = True
-except ImportError:
-    DUCKDB_AVAILABLE = False
-    NETCDF4_AVAILABLE = False
-    duckdb = None
-    xr = None
-    np = None
-    pd = None
-    nc = None
-    num2date = None
+import duckdb
+import xarray as xr
+import numpy as np
+import pandas as pd
+import netCDF4 as nc
+from netCDF4 import num2date
 
 from models import VariableType, ExperimentType
 
@@ -48,12 +36,6 @@ class DuckDBClimateLoader:
             db_path: Chemin vers le fichier DuckDB (créé si n'existe pas)
             data_directory: Répertoire contenant les fichiers NetCDF sources
         """
-        if not DUCKDB_AVAILABLE:
-            raise ImportError(
-                "DuckDB n'est pas installé. Installez-le avec: "
-                "poetry add duckdb"
-            )
-        
         self.db_path = Path(db_path) if db_path else Path("climate_data.duckdb")
         self.data_directory = Path(data_directory) if data_directory else None
         
