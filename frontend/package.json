@@ -8,6 +8,8 @@
     "yarn": ">=1.22.0"
   },
   "scripts": {
+    "deploy:surge": "yarn build && surge dist/",
+    "deploy:surge:prod": "yarn build && surge dist/ agroclimavisio.surge.sh",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
@@ -34,6 +36,7 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
     "globals": "^16.5.0",
+    "surge": "^0.23.1",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.4",
     "vite": "^7.2.4"

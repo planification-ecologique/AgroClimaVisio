@@ -19,7 +19,7 @@ export default function ChartsPage() {
   const [selectedMembers, setSelectedMembers] = useState<string[]>(['r1']);
   const [availableCities, setAvailableCities] = useState<CityOption[]>([]);
   const [availableMembers, setAvailableMembers] = useState<string[]>([]);
-  const [isLoadingOptions, setIsLoadingOptions] = useState<boolean>(true);
+  const [, setIsLoadingOptions] = useState<boolean>(true);
 
   // Charger les options disponibles
   useEffect(() => {

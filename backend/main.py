@@ -21,7 +21,8 @@ app = FastAPI(title="AgroClimaVisio API", version="1.0.0")
 
 # CORS middleware pour permettre les requêtes depuis le frontend
 # Permet les origines depuis les variables d'environnement ou localhost par défaut
-allowed_origins = os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")
+default_origins = "http://localhost:5173,https://agroclimavisio.surge.sh,http://agroclimavisio.surge.sh"
+allowed_origins = [origin.strip() for origin in os.getenv("CORS_ORIGINS", default_origins).split(",")]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
