@@ -82,7 +82,8 @@ class DuckDBClimateLoader:
                 lat DOUBLE NOT NULL,
                 lon DOUBLE NOT NULL,
                 time DATE NOT NULL,
-                value DOUBLE NOT NULL
+                value DOUBLE NOT NULL,
+                PRIMARY KEY (variable, experiment, gcm, rcm, member, lat, lon, time)
             );
         """)
         
@@ -107,7 +108,8 @@ class DuckDBClimateLoader:
         lat_filter: Optional[float] = None,  # Filtrer par latitude spécifique (ou liste)
         lon_filter: Optional[float] = None,  # Filtrer par longitude spécifique (ou liste)
         start_year: Optional[int] = None,  # Filtrer par année de début
-        end_year: Optional[int] = None  # Filtrer par année de fin
+        end_year: Optional[int] = None,  # Filtrer par année de fin
+        skip_duplicates: bool = True  # Si True, ignore les doublons lors de l'import
     ) -> int:
         """
         Importe un fichier NetCDF dans DuckDB de manière optimisée en mémoire.
@@ -135,6 +137,20 @@ class DuckDBClimateLoader:
         
         logger.info(f"Importation de {file_path} dans DuckDB (mode optimisé mémoire)...")
         print(f"   📂 Ouverture du fichier NetCDF avec netCDF4 (accès direct aux slices)...")
+        
+        # Vérifier si des données existent déjà pour ce fichier (optionnel)
+        if skip_duplicates:
+            existing_count = self.conn.execute("""
+                SELECT COUNT(*) 
+                FROM climate_data
+                WHERE variable = ?
+                  AND experiment = ?
+                  AND gcm = ?
+                  AND rcm = ?
+                  AND member = ?
+            """, [variable.value, experiment.value, gcm, rcm, member]).fetchone()[0]
+            if existing_count > 0:
+                print(f"   ⚠️  {existing_count:,} lignes existent déjà pour cette combinaison (doublons ignorés)")
         
         # Utiliser netCDF4 directement pour un accès plus efficace aux slices
         # Cela évite l'overhead de xarray et permet un accès direct optimisé
@@ -446,7 +462,19 @@ class DuckDBClimateLoader:
         if rows_buffer:
             df_chunk = pd.DataFrame(rows_buffer)
             self.conn.register('temp_chunk', df_chunk)
-            self.conn.execute("INSERT INTO climate_data SELECT * FROM temp_chunk")
+            # Insérer en ignorant les doublons
+            try:
+                self.conn.execute("""
+                    INSERT INTO climate_data 
+                    SELECT * FROM temp_chunk
+                    ON CONFLICT DO NOTHING
+                """)
+            except Exception as e:
+                # Si ON CONFLICT n'est pas supporté, utiliser INSERT OR IGNORE
+                if "ON CONFLICT" in str(e) or "syntax error" in str(e).lower():
+                    self.conn.execute("INSERT OR IGNORE INTO climate_data SELECT * FROM temp_chunk")
+                else:
+                    raise
             self.conn.unregister('temp_chunk')
             total_rows += len(rows_buffer)
         
