@@ -39,6 +39,8 @@ interface RainfallChartProps {
   startDate: string;
   endDate: string;
   experiment?: string;
+  cities?: string[];
+  members?: string[];
 }
 
 const COLORS = [
@@ -50,7 +52,7 @@ const COLORS = [
   '#d084d0', // Violet
 ];
 
-export default function RainfallChart({ startDate, endDate, experiment = 'ssp370' }: RainfallChartProps) {
+export default function RainfallChart({ startDate, endDate, experiment = 'ssp370', cities, members }: RainfallChartProps) {
   const [data, setData] = useState<RainfallData | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -70,6 +72,8 @@ export default function RainfallChart({ startDate, endDate, experiment = 'ssp370
             start_date: startDate,
             end_date: endDate,
             experiment: experiment,
+            cities: cities && cities.length > 0 ? cities : undefined,
+            members: members && members.length > 0 ? members : undefined,
           }),
         });
 
@@ -96,7 +100,7 @@ export default function RainfallChart({ startDate, endDate, experiment = 'ssp370
     if (startDate && endDate) {
       fetchData();
     }
-  }, [startDate, endDate, experiment]);
+  }, [startDate, endDate, experiment, cities, members]);
 
   if (isLoading) {
     return (
@@ -186,28 +190,6 @@ export default function RainfallChart({ startDate, endDate, experiment = 'ssp370
         </LineChart>
       </ResponsiveContainer>
       
-      <div style={{ marginTop: '20px', fontSize: '12px', color: '#666' }}>
-        <p><strong>Points représentatifs:</strong></p>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
-          <div>
-            <strong>Beauce:</strong>
-            <ul style={{ margin: '5px 0', paddingLeft: '20px' }}>
-              {data.points.filter(p => ['Chartres', 'Orléans', 'Châteaudun'].includes(p.name)).map(p => (
-                <li key={p.name}>{p.name}</li>
-              ))}
-            </ul>
-          </div>
-          <div>
-            <strong>Bretagne:</strong>
-            <ul style={{ margin: '5px 0', paddingLeft: '20px' }}>
-              {data.points.filter(p => ['Rennes', 'Brest', 'Vannes'].includes(p.name)).map(p => (
-                <li key={p.name}>{p.name}</li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }
-

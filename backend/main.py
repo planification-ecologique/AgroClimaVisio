@@ -91,6 +91,8 @@ class MonthlyRainfallRequest(BaseModel):
     experiment: Optional[str] = "ssp370"  # Par défaut ssp370
     gcm: Optional[str] = None  # Si None, utilise tous les GCM disponibles
     rcm: Optional[str] = None  # Si None, utilise tous les RCM disponibles
+    cities: Optional[List[str]] = None  # Liste des villes à inclure (ex: ["Chartres", "Rennes"])
+    members: Optional[List[str]] = None  # Liste des membres d'ensemble (ex: ["r1", "r2"])
 
 
 @app.post("/api/rainfall/monthly")
@@ -139,6 +141,18 @@ async def get_monthly_rainfall(request: MonthlyRainfallRequest):
         # Points représentatifs depuis la configuration centralisée
         all_points = get_all_points(format="dict")
         
+        # Filtrer les points par villes si spécifiées
+        if request.cities and len(request.cities) > 0:
+            # Convertir en minuscules pour comparaison insensible à la casse
+            cities_lower = [c.lower() for c in request.cities]
+            all_points = [p for p in all_points if p['name'].lower() in cities_lower]
+        
+        if not all_points:
+            return {
+                "error": "Aucun point trouvé pour les villes sélectionnées",
+                "points": []
+            }
+        
         # Construire la requête SQL pour obtenir les sommes mensuelles
         # Les valeurs sont stockées telles quelles depuis NetCDF
         # Pour les précipitations, elles peuvent être en kg/m²/s ou mm/jour selon le fichier
@@ -176,6 +190,13 @@ async def get_monthly_rainfall(request: MonthlyRainfallRequest):
         if request.rcm:
             query += " AND rcm = ?"
             params.append(request.rcm)
+        
+        # Filtrer par membres d'ensemble si spécifiés
+        if request.members and len(request.members) > 0:
+            # Créer une liste de placeholders pour les membres
+            member_placeholders = ','.join(['?' for _ in request.members])
+            query += f" AND member IN ({member_placeholders})"
+            params.extend(request.members)
         
         # Filtrer pour les points spécifiques (avec tolérance de 0.1 degré)
         # Optimisation: utiliser une condition combinée pour meilleure performance
@@ -263,6 +284,49 @@ async def get_monthly_rainfall(request: MonthlyRainfallRequest):
         return {
             "error": str(e),
             "points": []
+        }
+
+
+@app.get("/api/rainfall/options")
+async def get_rainfall_options():
+    """
+    Retourne les options disponibles pour les filtres (villes et membres d'ensemble).
+    """
+    loader = get_duckdb_loader()
+    if loader is None:
+        return {
+            "error": "Base de données DuckDB non disponible",
+            "cities": [],
+            "members": []
+        }
+    
+    try:
+        # Récupérer toutes les villes disponibles depuis la configuration
+        all_points = get_all_points(format="dict")
+        cities = [{"name": p["name"], "region": p["region"]} for p in all_points]
+        
+        # Récupérer les membres d'ensemble disponibles depuis la base de données
+        members_df = loader.conn.execute("""
+            SELECT DISTINCT member
+            FROM climate_data
+            WHERE variable = 'pr'
+              AND (rcm LIKE '%EMUL%' OR rcm LIKE '%emul%' OR rcm = 'CNRM-ALADIN63-EMUL')
+            ORDER BY member
+        """).df()
+        
+        members = members_df['member'].tolist() if not members_df.empty else []
+        
+        return {
+            "cities": cities,
+            "members": members
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {
+            "error": str(e),
+            "cities": [],
+            "members": []
         }
 
 
