@@ -1,5 +1,5 @@
 [phases.setup]
-nixPkgs = ["python39", "poetry"]
+nixPkgs = ["python312", "poetry", "gcc", "glibc", "gcc.cc.lib"]
 
 [phases.install]
 cmds = ["cd backend && poetry install"]
