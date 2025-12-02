@@ -15,7 +15,7 @@ from points_config import get_all_points
 def main():
     # Configuration
     data_dir = Path(__file__).parent / "data"
-    db_path = Path(__file__).parent / "climate_data.duckdb"
+    db_path = Path(__file__).parent / "data" / "climate_data.duckdb"
     
     if not data_dir.exists():
         print(f"❌ Répertoire de données non trouvé: {data_dir}")

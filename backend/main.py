@@ -77,7 +77,15 @@ def get_duckdb_loader():
     if _duckdb_loader is None:
         try:
             from duckdb_loader import DuckDBClimateLoader
-            db_path = Path(__file__).parent / "climate_data.duckdb"
+            # Chercher la DB dans backend/data/climate_data.duckdb
+            # Support pour Volume Railway via variable d'environnement DUCKDB_PATH
+            if os.getenv("DUCKDB_PATH"):
+                # Si DUCKDB_PATH est défini (Volume Railway), utiliser ce chemin
+                db_path = Path(os.getenv("DUCKDB_PATH")) / "climate_data.duckdb"
+            else:
+                # Sinon, utiliser backend/data/ (développement local)
+                db_path = Path(__file__).parent / "data" / "climate_data.duckdb"
+            
             if db_path.exists():
                 _duckdb_loader = DuckDBClimateLoader(db_path=str(db_path))
             else:

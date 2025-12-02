@@ -12,7 +12,7 @@ from models import VariableType, ExperimentType
 
 def main():
     # Chemin vers la base DuckDB
-    db_path = Path(__file__).parent / "climate_data.duckdb"
+    db_path = Path(__file__).parent / "data" / "climate_data.duckdb"
     
     if not db_path.exists():
         print(f"❌ Base de données non trouvée: {db_path}")
