@@ -67,12 +67,22 @@ async def root():
 async def startup_event():
     """Initialise le loader DuckDB au démarrage de l'application"""
     print("🚀 Démarrage de l'application...")
-    # Initialiser le loader DuckDB dès le démarrage
-    loader = get_duckdb_loader()
-    if loader:
-        print("✅ Loader DuckDB initialisé avec succès au démarrage")
-    else:
-        print("⚠️  Loader DuckDB non disponible au démarrage")
+    # Initialiser DuckDB en arrière-plan pour ne pas bloquer le démarrage
+    import asyncio
+    async def init_duckdb():
+        try:
+            loader = get_duckdb_loader()
+            if loader:
+                print("✅ Loader DuckDB initialisé avec succès au démarrage")
+            else:
+                print("⚠️  Loader DuckDB non disponible au démarrage (sera initialisé à la première requête)")
+        except Exception as e:
+            print(f"⚠️  Erreur lors de l'initialisation au démarrage: {e}")
+            print("⚠️  L'application continuera sans DuckDB (sera initialisé à la première requête)")
+    
+    # Lancer l'initialisation en arrière-plan sans attendre
+    asyncio.create_task(init_duckdb())
+    print("✅ Application démarrée (initialisation DuckDB en cours en arrière-plan)")
 
 
 @app.get("/health")
