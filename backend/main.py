@@ -63,6 +63,18 @@ async def root():
     return {"message": "AgroClimaVisio API", "version": "1.0.0"}
 
 
+@app.on_event("startup")
+async def startup_event():
+    """Initialise le loader DuckDB au démarrage de l'application"""
+    print("🚀 Démarrage de l'application...")
+    # Initialiser le loader DuckDB dès le démarrage
+    loader = get_duckdb_loader()
+    if loader:
+        print("✅ Loader DuckDB initialisé avec succès au démarrage")
+    else:
+        print("⚠️  Loader DuckDB non disponible au démarrage")
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok"}
@@ -71,13 +83,15 @@ async def health():
 @app.get("/debug/db")
 async def debug_db():
     """Endpoint de debug pour vérifier l'état de la base de données"""
+    global _duckdb_init_error
     debug_info = {
         "current_directory": os.getcwd(),
         "file_parent": str(Path(__file__).parent),
         "duckdb_path_env": os.getenv("DUCKDB_PATH"),
         "possible_paths": [],
         "found_path": None,
-        "loader_available": _duckdb_loader is not None
+        "loader_available": _duckdb_loader is not None,
+        "init_error": _duckdb_init_error
     }
     
     # Liste des chemins possibles
@@ -105,10 +119,11 @@ async def debug_db():
 
 # Initialiser le chargeur DuckDB une seule fois au démarrage
 _duckdb_loader = None
+_duckdb_init_error = None
 
 def get_duckdb_loader():
     """Obtient ou crée le chargeur DuckDB"""
-    global _duckdb_loader
+    global _duckdb_loader, _duckdb_init_error
     if _duckdb_loader is None:
         try:
             from duckdb_loader import DuckDBClimateLoader
@@ -146,11 +161,24 @@ def get_duckdb_loader():
                 print(f"   __file__ parent: {Path(__file__).parent}")
                 print(f"   DUCKDB_PATH env: {os.getenv('DUCKDB_PATH')}")
             else:
-                _duckdb_loader = DuckDBClimateLoader(db_path=str(db_path))
+                try:
+                    print(f"🔄 Initialisation du loader DuckDB avec: {db_path}")
+                    _duckdb_loader = DuckDBClimateLoader(db_path=str(db_path))
+                    print("✅ Loader DuckDB initialisé avec succès")
+                    _duckdb_init_error = None  # Réinitialiser l'erreur en cas de succès
+                except Exception as loader_error:
+                    _duckdb_init_error = str(loader_error)
+                    print(f"❌ Erreur lors de l'initialisation du loader DuckDB: {loader_error}")
+                    import traceback
+                    traceback.print_exc()
+                    # Ne pas lever l'exception, on veut que l'API démarre même sans DB
         except Exception as e:
+            _duckdb_init_error = str(e)
             print(f"⚠️  Erreur lors de l'initialisation de DuckDB: {e}")
             import traceback
             traceback.print_exc()
+            # Ne pas lever l'exception ici, on veut que l'API démarre même sans DB
+            # Le loader sera None et les endpoints retourneront une erreur appropriée
     return _duckdb_loader
 
 
