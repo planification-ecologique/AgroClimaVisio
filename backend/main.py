@@ -145,10 +145,15 @@ async def get_monthly_rainfall(request: MonthlyRainfallRequest):
         # On fait SUM pour obtenir le total mensuel
         # Si les valeurs sont en kg/m²/s, on multiplie par 86400 pour convertir en mm/jour avant SUM
         # Sinon, on suppose qu'elles sont déjà en mm/jour
+        # IMPORTANT: Grouper par gcm/rcm/member pour éviter le double comptage
+        # Filtrer uniquement les données EMUL
         query = """
             SELECT 
                 lat,
                 lon,
+                gcm,
+                rcm,
+                member,
                 EXTRACT(YEAR FROM time) as year,
                 EXTRACT(MONTH FROM time) as month,
                 SUM(value * 86400) as monthly_total,
@@ -158,6 +163,7 @@ async def get_monthly_rainfall(request: MonthlyRainfallRequest):
               AND experiment = ?
               AND time >= ?
               AND time <= ?
+              AND (rcm LIKE '%EMUL%' OR rcm LIKE '%emul%' OR rcm = 'CNRM-ALADIN63-EMUL')
         """
         
         params = [experiment.value, start_date, end_date]
@@ -180,8 +186,8 @@ async def get_monthly_rainfall(request: MonthlyRainfallRequest):
         query += f" AND ({' OR '.join(point_conditions)})"
         
         query += """
-            GROUP BY lat, lon, year, month
-            ORDER BY lat, lon, year, month
+            GROUP BY lat, lon, gcm, rcm, member, year, month
+            ORDER BY lat, lon, gcm, rcm, member, year, month
         """
         
         result_df = loader.conn.execute(query, params).df()
@@ -193,8 +199,9 @@ async def get_monthly_rainfall(request: MonthlyRainfallRequest):
             }
         
         # Convertir en format JSON pour le frontend
-        # Grouper par point et créer les séries temporelles
-        data_by_point = {}
+        # Grouper par point ET par gcm/rcm pour éviter le double comptage
+        # Si plusieurs gcm/rcm existent pour le même point/mois, on les garde séparés
+        data_by_point_gcm_rcm = {}
         
         for _, row in result_df.iterrows():
             # Trouver le point le plus proche
@@ -206,30 +213,42 @@ async def get_monthly_rainfall(request: MonthlyRainfallRequest):
                     min_dist = dist
                     point_key = point['name']
             
-            if point_key not in data_by_point:
-                data_by_point[point_key] = {
+            # Clé unique: point + gcm + rcm + member pour éviter le double comptage
+            gcm = str(row['gcm'])
+            rcm = str(row['rcm'])
+            member = str(row['member'])
+            unique_key = f"{point_key}_{gcm}_{rcm}_{member}"
+            
+            if unique_key not in data_by_point_gcm_rcm:
+                data_by_point_gcm_rcm[unique_key] = {
                     "name": point_key,
                     "lat": float(row['lat']),
                     "lon": float(row['lon']),
+                    "gcm": gcm,
+                    "rcm": rcm,
+                    "member": member,
                     "data": []
                 }
             
-            # Les valeurs sont stockées en mm/jour dans DuckDB (déjà converties lors de l'import)
-            # SUM donne le total mensuel en mm
+            # Les valeurs sont stockées en kg/m²/s dans DuckDB
+            # On multiplie par 86400 pour convertir en mm/jour, puis on fait SUM pour le total mensuel
             monthly_total_mm = float(row['monthly_total'])
             
-            data_by_point[point_key]["data"].append({
+            data_by_point_gcm_rcm[unique_key]["data"].append({
                 "year": int(row['year']),
                 "month": int(row['month']),
-                "date": f"{int(row['year'])}-{int(row['month']):02d}-01",
+                "date": f"{int(row['year'])}-{int(row['month']):02d}",
                 "value": round(monthly_total_mm, 2),
                 "days_count": int(row['days_count'])
             })
         
         # Convertir en liste et trier
-        result_data = list(data_by_point.values())
+        # Chaque combinaison point/gcm/rcm/member aura sa propre série temporelle
+        result_data = list(data_by_point_gcm_rcm.values())
         for point_data in result_data:
             point_data["data"].sort(key=lambda x: (x["year"], x["month"]))
+            # Ajouter le nom avec gcm/rcm/member pour identification dans le frontend
+            point_data["name"] = f"{point_data['name']} ({point_data['gcm']}/{point_data['rcm']}/{point_data['member']})"
         
         return {
             "start_date": request.start_date,
@@ -245,22 +264,6 @@ async def get_monthly_rainfall(request: MonthlyRainfallRequest):
             "error": str(e),
             "points": []
         }
-
-
-# Initialiser le chargeur DuckDB une seule fois au démarrage
-_duckdb_loader = None
-
-def get_duckdb_loader():
-    """Obtient ou crée le chargeur DuckDB"""
-    global _duckdb_loader
-    if _duckdb_loader is None:
-        from duckdb_loader import DuckDBClimateLoader
-        db_path = Path(__file__).parent / "climate_data.duckdb"
-        if db_path.exists():
-            _duckdb_loader = DuckDBClimateLoader(db_path=str(db_path))
-        else:
-            print(f"⚠️  Base de données DuckDB non trouvée: {db_path}")
-    return _duckdb_loader
 
 
 def generate_mock_geojson(map_type: str, center_lon: float = 1.4437, center_lat: float = 43.6047):
