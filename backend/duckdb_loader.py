@@ -3,6 +3,8 @@ Module pour charger et interroger les données climatiques via DuckDB
 Optimisé pour accès rapide point par point (carré de grille)
 """
 
+from __future__ import annotations
+
 from pathlib import Path
 from typing import Optional, Dict, List, Tuple
 from datetime import date, datetime
@@ -556,7 +558,7 @@ class DuckDBClimateLoader:
         start_date: Optional[date] = None,
         end_date: Optional[date] = None,
         tolerance: float = 0.05  # Tolérance en degrés pour trouver le point le plus proche
-    ) -> pd.DataFrame:
+    ) -> "pd.DataFrame":
         """
         Récupère toutes les données pour un carré de grille donné.
         
@@ -704,7 +706,7 @@ class DuckDBClimateLoader:
         member: str = "r1",
         start_date: Optional[date] = None,
         end_date: Optional[date] = None
-    ) -> pd.DataFrame:
+    ) -> "pd.DataFrame":
         """
         Récupère une série temporelle pour un point et une variable.
         
