@@ -13,8 +13,8 @@ RUN apt-get update && \
 # Définir le répertoire de travail
 WORKDIR /app
 
-# Installer Poetry
-RUN pip install poetry==1.8.3
+# Installer Poetry 2.0.0 (même version que localement)
+RUN pip install poetry==2.0.0
 
 # Configurer Poetry pour ne pas créer d'environnement virtuel (on utilise le système)
 RUN poetry config virtualenvs.create false
@@ -24,7 +24,9 @@ COPY backend/pyproject.toml backend/poetry.lock ./backend/
 
 # Installer les dépendances Python (cette couche sera mise en cache si pyproject.toml ne change pas)
 WORKDIR /app/backend
-RUN poetry install --without dev --no-interaction --no-ansi
+# Régénérer le lock file si nécessaire (si pyproject.toml a changé), puis installer
+RUN poetry lock --no-update 2>/dev/null || poetry lock || true && \
+    poetry install --without dev --no-interaction --no-ansi
 WORKDIR /app
 
 # Copier le reste du code backend
