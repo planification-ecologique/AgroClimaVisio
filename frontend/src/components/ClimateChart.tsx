@@ -27,18 +27,20 @@ interface PointData {
   data: MonthlyDataPoint[];
 }
 
-interface RainfallData {
+interface ClimateData {
   start_date: string;
   end_date: string;
   experiment: string;
+  variable: string;
   points: PointData[];
   error?: string;
 }
 
-interface RainfallChartProps {
+interface ClimateChartProps {
   startDate: string;
   endDate: string;
   experiment?: string;
+  variable: string;
   cities?: string[];
   members?: string[];
 }
@@ -52,10 +54,20 @@ const COLORS = [
   '#d084d0', // Violet
 ];
 
-export default function RainfallChart({ startDate, endDate, experiment = 'ssp370', cities, members }: RainfallChartProps) {
-  const [data, setData] = useState<RainfallData | null>(null);
+export default function ClimateChart({ startDate, endDate, experiment = 'ssp370', variable, cities, members }: ClimateChartProps) {
+  const [data, setData] = useState<ClimateData | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  
+  const variableLabels = {
+    pr: 'Précipitations',
+    tas: 'Température',
+  };
+  
+  const variableUnits = {
+    pr: 'mm',
+    tas: '°C',
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -63,7 +75,7 @@ export default function RainfallChart({ startDate, endDate, experiment = 'ssp370
       setError(null);
       
       try {
-        const response = await fetch(`${API_BASE_URL}/api/rainfall/monthly`, {
+        const response = await fetch(`${API_BASE_URL}/api/charts/monthly`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -72,6 +84,7 @@ export default function RainfallChart({ startDate, endDate, experiment = 'ssp370
             start_date: startDate,
             end_date: endDate,
             experiment: experiment,
+            variable: variable,
             cities: cities && cities.length > 0 ? cities : undefined,
             members: members && members.length > 0 ? members : undefined,
           }),
@@ -100,7 +113,7 @@ export default function RainfallChart({ startDate, endDate, experiment = 'ssp370
     if (startDate && endDate) {
       fetchData();
     }
-  }, [startDate, endDate, experiment, cities, members]);
+  }, [startDate, endDate, experiment, variable, cities, members]);
 
   if (isLoading) {
     return (
@@ -144,10 +157,13 @@ export default function RainfallChart({ startDate, endDate, experiment = 'ssp370
     a.date.localeCompare(b.date)
   );
 
+  const unit = variableUnits[data.variable as keyof typeof variableUnits] || '';
+  const label = variableLabels[data.variable as keyof typeof variableLabels] || 'Données';
+
   return (
     <div style={{ width: '100%', height: '500px', padding: '20px' }}>
       <h2 style={{ marginBottom: '20px' }}>
-        Précipitations mensuelles - {data.experiment.toUpperCase()}
+        {label} mensuelles - {data.experiment.toUpperCase()}
       </h2>
       <p style={{ marginBottom: '20px', color: '#666' }}>
         Période: {new Date(data.start_date).toLocaleDateString('fr-FR')} - {new Date(data.end_date).toLocaleDateString('fr-FR')}
@@ -168,11 +184,11 @@ export default function RainfallChart({ startDate, endDate, experiment = 'ssp370
             interval="preserveStartEnd"
           />
           <YAxis 
-            label={{ value: 'Précipitations (mm)', angle: -90, position: 'insideLeft' }}
+            label={{ value: `${label} (${unit})`, angle: -90, position: 'insideLeft' }}
             tick={{ fontSize: 12 }}
           />
           <Tooltip 
-            formatter={(value: number) => [`${value.toFixed(2)} mm`, '']}
+            formatter={(value: number) => [`${value.toFixed(2)} ${unit}`, '']}
             labelFormatter={(label) => `Date: ${label}`}
           />
           <Legend />

@@ -3,7 +3,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Header from './components/Header';
 import ParametersPanel from './components/ParametersPanel';
 import Map from './components/Map';
-import RainfallPage from './pages/RainfallPage';
+import ChartsPage from './pages/ChartsPage';
 import type { MapRequest, MapData, Preset } from './types';
 import './App.css';
 
@@ -79,7 +79,7 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/rainfall" element={<RainfallPage />} />
+        <Route path="/charts" element={<ChartsPage />} />
         <Route
           path="/"
           element={

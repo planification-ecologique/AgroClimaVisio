@@ -84,22 +84,27 @@ def get_duckdb_loader():
     return _duckdb_loader
 
 
-class MonthlyRainfallRequest(BaseModel):
-    """Requête pour obtenir les données de pluie mensuelle"""
+class MonthlyChartRequest(BaseModel):
+    """Requête pour obtenir les données climatiques mensuelles"""
     start_date: str  # Format: "YYYY-MM-DD"
     end_date: str    # Format: "YYYY-MM-DD"
     experiment: Optional[str] = "ssp370"  # Par défaut ssp370
+    variable: str = "pr"  # Variable climatique: "pr" (précipitations) ou "tas" (température)
     gcm: Optional[str] = None  # Si None, utilise tous les GCM disponibles
     rcm: Optional[str] = None  # Si None, utilise tous les RCM disponibles
     cities: Optional[List[str]] = None  # Liste des villes à inclure (ex: ["Chartres", "Rennes"])
     members: Optional[List[str]] = None  # Liste des membres d'ensemble (ex: ["r1", "r2"])
 
 
-@app.post("/api/rainfall/monthly")
-async def get_monthly_rainfall(request: MonthlyRainfallRequest):
+@app.post("/api/charts/monthly")
+async def get_monthly_chart_data(request: MonthlyChartRequest):
     """
-    Récupère les données de somme de pluie mensuelle pour les 6 points représentatifs
-    (3 points Beauce + 3 points Bretagne) sur une période donnée.
+    Récupère les données climatiques mensuelles pour les points représentatifs
+    sur une période donnée.
+    
+    Variables supportées:
+    - "pr": Précipitations (somme mensuelle en mm)
+    - "tas": Température (moyenne mensuelle en °C)
     
     Retourne les données agrégées par mois pour chaque point.
     """
@@ -153,15 +158,24 @@ async def get_monthly_rainfall(request: MonthlyRainfallRequest):
                 "points": []
             }
         
-        # Construire la requête SQL pour obtenir les sommes mensuelles
-        # Les valeurs sont stockées telles quelles depuis NetCDF
-        # Pour les précipitations, elles peuvent être en kg/m²/s ou mm/jour selon le fichier
-        # On fait SUM pour obtenir le total mensuel
-        # Si les valeurs sont en kg/m²/s, on multiplie par 86400 pour convertir en mm/jour avant SUM
-        # Sinon, on suppose qu'elles sont déjà en mm/jour
+        # Valider la variable
+        if request.variable not in ['pr', 'tas']:
+            return {
+                "error": f"Variable non supportée: {request.variable}. Utilisez 'pr' ou 'tas'.",
+                "points": []
+            }
+        
+        # Construire la requête SQL selon la variable
         # IMPORTANT: Grouper par gcm/rcm/member pour éviter le double comptage
         # Filtrer uniquement les données EMUL
-        query = """
+        if request.variable == 'pr':
+            # Précipitations: somme mensuelle (convertir kg/m²/s en mm)
+            aggregation = "SUM(value * 86400) as monthly_total"
+        else:  # tas
+            # Température: moyenne mensuelle (°C)
+            aggregation = "AVG(value) as monthly_avg"
+        
+        query = f"""
             SELECT 
                 lat,
                 lon,
@@ -170,17 +184,17 @@ async def get_monthly_rainfall(request: MonthlyRainfallRequest):
                 member,
                 EXTRACT(YEAR FROM time) as year,
                 EXTRACT(MONTH FROM time) as month,
-                SUM(value * 86400) as monthly_total,
+                {aggregation},
                 COUNT(*) as days_count
             FROM climate_data
-            WHERE variable = 'pr'
+            WHERE variable = ?
               AND experiment = ?
               AND time >= ?
               AND time <= ?
               AND (rcm LIKE '%EMUL%' OR rcm LIKE '%emul%' OR rcm = 'CNRM-ALADIN63-EMUL')
         """
         
-        params = [experiment.value, start_date, end_date]
+        params = [request.variable, experiment.value, start_date, end_date]
         
         # Ajouter filtres GCM/RCM si spécifiés
         if request.gcm:
@@ -251,15 +265,19 @@ async def get_monthly_rainfall(request: MonthlyRainfallRequest):
                     "data": []
                 }
             
-            # Les valeurs sont stockées en kg/m²/s dans DuckDB
-            # On multiplie par 86400 pour convertir en mm/jour, puis on fait SUM pour le total mensuel
-            monthly_total_mm = float(row['monthly_total'])
+            # Récupérer la valeur selon la variable
+            if request.variable == 'pr':
+                # Précipitations: valeur déjà convertie en mm
+                value = float(row['monthly_total'])
+            else:  # tas
+                # Température: moyenne en °C
+                value = float(row['monthly_avg'])
             
             data_by_point_gcm_rcm[unique_key]["data"].append({
                 "year": int(row['year']),
                 "month": int(row['month']),
                 "date": f"{int(row['year'])}-{int(row['month']):02d}",
-                "value": round(monthly_total_mm, 2),
+                "value": round(value, 2),
                 "days_count": int(row['days_count'])
             })
         
@@ -275,6 +293,7 @@ async def get_monthly_rainfall(request: MonthlyRainfallRequest):
             "start_date": request.start_date,
             "end_date": request.end_date,
             "experiment": request.experiment,
+            "variable": request.variable,
             "points": result_data
         }
         
@@ -287,8 +306,8 @@ async def get_monthly_rainfall(request: MonthlyRainfallRequest):
         }
 
 
-@app.get("/api/rainfall/options")
-async def get_rainfall_options():
+@app.get("/api/charts/options")
+async def get_charts_options():
     """
     Retourne les options disponibles pour les filtres (villes et membres d'ensemble).
     """
@@ -306,11 +325,11 @@ async def get_rainfall_options():
         cities = [{"name": p["name"], "region": p["region"]} for p in all_points]
         
         # Récupérer les membres d'ensemble disponibles depuis la base de données
+        # (pour toutes les variables, pas seulement pr)
         members_df = loader.conn.execute("""
             SELECT DISTINCT member
             FROM climate_data
-            WHERE variable = 'pr'
-              AND (rcm LIKE '%EMUL%' OR rcm LIKE '%emul%' OR rcm = 'CNRM-ALADIN63-EMUL')
+            WHERE (rcm LIKE '%EMUL%' OR rcm LIKE '%emul%' OR rcm = 'CNRM-ALADIN63-EMUL')
             ORDER BY member
         """).df()
         

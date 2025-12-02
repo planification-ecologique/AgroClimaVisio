@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import RainfallChart from '../components/RainfallChart';
+import ClimateChart from '../components/ClimateChart';
 import Header from '../components/Header';
 import CheckboxDropdown from '../components/CheckboxDropdown';
-import './RainfallPage.css';
+import './ChartsPage.css';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
@@ -11,9 +11,10 @@ interface CityOption {
   region: string;
 }
 
-export default function RainfallPage() {
+export default function ChartsPage() {
   const [startDate, setStartDate] = useState<string>('2025-01-01');
   const [endDate, setEndDate] = useState<string>('2030-12-31');
+  const [selectedVariable, setSelectedVariable] = useState<string>('pr');
   const [selectedCities, setSelectedCities] = useState<string[]>(['Chartres']);
   const [selectedMembers, setSelectedMembers] = useState<string[]>(['r1']);
   const [availableCities, setAvailableCities] = useState<CityOption[]>([]);
@@ -24,7 +25,7 @@ export default function RainfallPage() {
   useEffect(() => {
     const fetchOptions = async () => {
       try {
-        const response = await fetch(`${API_BASE_URL}/api/rainfall/options`);
+        const response = await fetch(`${API_BASE_URL}/api/charts/options`);
         if (response.ok) {
           const data = await response.json();
           setAvailableCities(data.cities || []);
@@ -45,8 +46,13 @@ export default function RainfallPage() {
     fetchOptions();
   }, []);
 
+  const variableOptions = [
+    { value: 'pr', label: 'Précipitations (pr)' },
+    { value: 'tas', label: 'Température (tas)' },
+  ];
+
   return (
-    <div className="rainfall-page">
+    <div className="charts-page">
       <Header
         selectedYear={2025}
         onYearChange={() => {}}
@@ -56,10 +62,24 @@ export default function RainfallPage() {
         mapStyle="desaturated"
         onMapStyleChange={() => {}}
       />
-      <div className="rainfall-content">
-        <div className="rainfall-controls">
-          <h1>Précipitations mensuelles - Points représentatifs</h1>
+      <div className="charts-content">
+        <div className="charts-controls">
+          <h1>Données climatiques mensuelles - Points représentatifs</h1>
           <div className="controls-grid">
+            <div className="control-group">
+              <label htmlFor="variable">Variable:</label>
+              <select
+                id="variable"
+                value={selectedVariable}
+                onChange={(e) => setSelectedVariable(e.target.value)}
+              >
+                {variableOptions.map(opt => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
             <div className="control-group">
               <label htmlFor="start-date">Date de début:</label>
               <input
@@ -104,11 +124,12 @@ export default function RainfallPage() {
             </div>
           </div>
         </div>
-        <div className="rainfall-chart-container">
-          <RainfallChart
+        <div className="charts-chart-container">
+          <ClimateChart
             startDate={startDate}
             endDate={endDate}
             experiment="ssp370"
+            variable={selectedVariable}
             cities={selectedCities}
             members={selectedMembers}
           />

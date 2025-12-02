@@ -33,10 +33,10 @@ export default function Header({
             Cartes
           </Link>
           <Link 
-            to="/rainfall" 
-            className={location.pathname === '/rainfall' ? 'active' : ''}
+            to="/charts" 
+            className={location.pathname === '/charts' ? 'active' : ''}
           >
-            Précipitations
+            Graphiques
           </Link>
         </nav>
         <div className="header-controls">
