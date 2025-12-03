@@ -209,7 +209,7 @@ class MonthlyChartRequest(BaseModel):
 class CoverCropFeasibilityRequest(BaseModel):
     """Requête pour calculer la faisabilité des couverts végétaux"""
     city: str  # Ville pour laquelle calculer la faisabilité
-    start_year: int = 2025
+    start_year: int = 1990
     end_year: int = 2100
     experiment: Optional[str] = "ssp370"
 
@@ -217,7 +217,7 @@ class CoverCropFeasibilityRequest(BaseModel):
 class CornViabilityRequest(BaseModel):
     """Requête pour calculer la viabilité du maïs"""
     city: str  # Ville pour laquelle calculer la viabilité
-    start_year: int = 2025
+    start_year: int = 1990
     end_year: int = 2100
     experiment: Optional[str] = "ssp370"
     # Seuils configurables (seront appliqués côté frontend, mais on peut les prévoir ici pour documentation)

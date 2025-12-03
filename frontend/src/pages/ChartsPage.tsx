@@ -243,20 +243,40 @@ export default function ChartsPage() {
             />
           )}
           {activeTab === 'cover-crop' && (
-            <CoverCropFeasibilityChart
-              city={coverCropCity}
-              startYear={2025}
-              endYear={2100}
-              experiment="ssp370"
-            />
+            <>
+              <CoverCropFeasibilityChart
+                city={coverCropCity}
+                startYear={2015}
+                endYear={2100}
+                experiment="ssp370"
+              />
+              <div style={{ marginTop: '200px' }}>
+                <CoverCropFeasibilityChart
+                  city={coverCropCity}
+                  startYear={1990}
+                  endYear={2014}
+                  experiment="historical"
+                />
+              </div>
+            </>
           )}
           {activeTab === 'corn' && (
-            <CornViabilityChart
-              city={cornCity}
-              startYear={2025}
-              endYear={2100}
-              experiment="ssp370"
-            />
+            <>
+              <CornViabilityChart
+                city={cornCity}
+                startYear={2025}
+                endYear={2100}
+                experiment="ssp370"
+              />
+              <div style={{ marginTop: '200px' }}>
+                <CornViabilityChart
+                  city={cornCity}
+                  startYear={1990}
+                  endYear={2014}
+                  experiment="historical"
+                />
+              </div>
+            </>
           )}
           {activeTab === 'sql' && <SQLQueryPanel />}
         </div>

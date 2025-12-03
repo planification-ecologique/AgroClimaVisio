@@ -37,7 +37,7 @@ interface CoverCropFeasibilityChartProps {
 
 export default function CoverCropFeasibilityChart({
   city,
-  startYear = 2025,
+  startYear = 1990,
   endYear = 2100,
   experiment = 'ssp370'
 }: CoverCropFeasibilityChartProps) {

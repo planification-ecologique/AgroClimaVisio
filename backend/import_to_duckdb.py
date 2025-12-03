@@ -145,7 +145,7 @@ def main():
                 end_year = None    # Pas de filtre de fin
             else:
                 # Pour les précipitations, filtrer 2025-2100
-                start_year = 2025
+                start_year = 1990
                 end_year = 2100
             
             # Points représentatifs de la Beauce et de la Bretagne
