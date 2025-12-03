@@ -57,7 +57,7 @@ export default function SQLQueryPanel() {
   };
 
   return (
-    <div style={{ padding: '20px', maxWidth: '100%' }}>
+    <div style={{ padding: '10px', maxWidth: '100%' }}>
       <h2 style={{ marginBottom: '15px' }}>SQL Query (Développement)</h2>
       <div style={{ marginBottom: '15px' }}>
         <textarea

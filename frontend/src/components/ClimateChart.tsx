@@ -118,7 +118,7 @@ export default function ClimateChart({ startDate, endDate, experiment = 'ssp370'
 
   if (isLoading) {
     return (
-      <div style={{ padding: '20px', textAlign: 'center' }}>
+      <div style={{ padding: '10px', textAlign: 'center' }}>
         <p>Chargement des données...</p>
       </div>
     );
@@ -126,7 +126,7 @@ export default function ClimateChart({ startDate, endDate, experiment = 'ssp370'
 
   if (error) {
     return (
-      <div style={{ padding: '20px', color: 'red' }}>
+      <div style={{ padding: '10px', color: 'red' }}>
         <p>Erreur: {error}</p>
       </div>
     );
@@ -134,7 +134,7 @@ export default function ClimateChart({ startDate, endDate, experiment = 'ssp370'
 
   if (!data || !data.points || data.points.length === 0) {
     return (
-      <div style={{ padding: '20px' }}>
+      <div style={{ padding: '10px' }}>
         <p>Aucune donnée disponible pour cette période.</p>
       </div>
     );
@@ -164,7 +164,7 @@ export default function ClimateChart({ startDate, endDate, experiment = 'ssp370'
   const referenceLineValue = isPrecipitation ? 50 : null;
 
   return (
-    <div style={{ width: '100%', height: '500px', padding: '20px' }}>
+    <div style={{ width: '100%', height: '500px', padding: '10px' }}>
       <h2 style={{ marginBottom: '20px' }}>
         {label} mensuelles - {data.experiment.toUpperCase()}
       </h2>

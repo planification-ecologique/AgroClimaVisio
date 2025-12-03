@@ -92,7 +92,7 @@ export default function CoverCropFeasibilityChart({
 
   if (isLoading) {
     return (
-      <div style={{ padding: '20px', textAlign: 'center' }}>
+      <div style={{ padding: '10px', textAlign: 'center' }}>
         <p>Chargement des données...</p>
       </div>
     );
@@ -100,7 +100,7 @@ export default function CoverCropFeasibilityChart({
 
   if (error) {
     return (
-      <div style={{ padding: '20px', textAlign: 'center', color: 'red' }}>
+      <div style={{ padding: '10px', textAlign: 'center', color: 'red' }}>
         <p>Erreur: {error}</p>
       </div>
     );
@@ -108,7 +108,7 @@ export default function CoverCropFeasibilityChart({
 
   if (!data || !data.years || data.years.length === 0) {
     return (
-      <div style={{ padding: '20px', textAlign: 'center' }}>
+      <div style={{ padding: '10px', textAlign: 'center' }}>
         <p>Aucune donnée disponible</p>
       </div>
     );
@@ -133,7 +133,7 @@ export default function CoverCropFeasibilityChart({
   });
 
   return (
-    <div style={{ width: '100%', height: '400px', padding: '20px' }}>
+    <div style={{ width: '100%', height: '400px', padding: '10px' }}>
       <h3 style={{ marginBottom: '10px' }}>
         Faisabilité des couverts végétaux - {data.city}
       </h3>

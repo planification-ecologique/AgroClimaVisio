@@ -98,7 +98,7 @@ export default function ChartsPage() {
             >
               Faisabilité couverts végétaux
             </button>
-            {import.meta.env.DEV && (
+            {(import.meta.env.DEV || import.meta.env.VITE_SHOW_SQL_PANEL === 'true') && (
               <button
                 onClick={() => setActiveTab('sql')}
                 style={{
