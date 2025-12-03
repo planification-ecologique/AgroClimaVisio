@@ -841,12 +841,12 @@ async def execute_sql_query(request: SQLQueryRequest):
     query_upper = query.upper().strip()
     
     # Vérifier que c'est une requête SELECT uniquement
-    if not query_upper.startswith("SELECT"):
-        return {
-            "error": "Seules les requêtes SELECT sont autorisées pour des raisons de sécurité.",
-            "allowed": False
-        }
-    
+    # if not query_upper.startswith("SELECT"):
+    #     return {
+    #         "error": "Seules les requêtes SELECT sont autorisées pour des raisons de sécurité.",
+    #         "allowed": False
+    #     }
+
     # Vérifier qu'il n'y a pas de commandes dangereuses
     dangerous_keywords = ["DROP", "DELETE", "UPDATE", "INSERT", "ALTER", "CREATE", "TRUNCATE", "EXEC", "EXECUTE"]
     for keyword in dangerous_keywords:
