@@ -14,15 +14,15 @@ import {
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 interface YearlyData {
-  year: number;
-  member_minima: Record<string, number | null>;
+  member_minima_by_window: Record<number, Record<string, number | null>>;
 }
 
 interface CoverCropFeasibilityData {
   city: string;
   criterion: string;
+  window_sizes: number[];
   years: number[];
-  yearly_data: YearlyData[];
+  yearly_data: Record<number, YearlyData>;
   total_members: number;
   members: string[];
   error?: string;
@@ -114,22 +114,44 @@ export default function CoverCropFeasibilityChart({
     );
   }
 
-  // Calculer le % de membres qui vérifient le critère pour chaque année
-  const chartData = data.yearly_data.map((yearData) => {
-    const memberMinima = yearData.member_minima;
-    const validMembers = Object.values(memberMinima).filter(
-      (min) => min !== null && min !== undefined
-    );
-    const membersMeetingCriterion = validMembers.filter((min) => min! >= threshold);
-    const percentage =
-      validMembers.length > 0
-        ? (membersMeetingCriterion.length / validMembers.length) * 100
-        : 0;
+  // Calculer le % de membres qui vérifient le critère pour chaque année et chaque fenêtre
+  const chartData = data.years.map((year) => {
+    const yearData = data.yearly_data[year];
+    if (!yearData || !yearData.member_minima_by_window) {
+      return {
+        year,
+        percentage_21: 0,
+        percentage_42: 0,
+      };
+    }
 
-    return {
-      year: yearData.year,
-      percentage: Math.round(percentage * 10) / 10,
-    };
+    const result: { year: number; percentage_21?: number; percentage_42?: number } = { year };
+
+    // Calculer pour chaque taille de fenêtre
+    for (const windowSize of data.window_sizes) {
+      const memberMinima = yearData.member_minima_by_window[windowSize];
+      if (!memberMinima) continue;
+
+      const validMembers = Object.values(memberMinima).filter(
+        (min) => min !== null && min !== undefined
+      );
+
+      // Ajuster le seuil selon la taille de fenêtre (seuil mensualisé pour 30 jours)
+      const adjustedThreshold = threshold * (windowSize / 30);
+      const membersMeetingCriterion = validMembers.filter((min) => min! >= adjustedThreshold);
+      const percentage =
+        validMembers.length > 0
+          ? (membersMeetingCriterion.length / validMembers.length) * 100
+          : 0;
+
+      if (windowSize === 21) {
+        result.percentage_21 = Math.round(percentage * 10) / 10;
+      } else if (windowSize === 42) {
+        result.percentage_42 = Math.round(percentage * 10) / 10;
+      }
+    }
+
+    return result;
   });
 
   return (
@@ -160,7 +182,7 @@ export default function CoverCropFeasibilityChart({
           }}
         />
         <span style={{ fontSize: '0.85em', color: '#888' }}>
-          (défaut: 25mm)
+          (mensualisé, défaut: 25mm/mois)
         </span>
       </div>
       <p style={{ fontSize: '0.85em', color: '#888', marginBottom: '20px' }}>
@@ -178,19 +200,34 @@ export default function CoverCropFeasibilityChart({
             domain={[0, 100]}
           />
           <Tooltip 
-            formatter={(value: number) => [`${value.toFixed(1)}%`, '% de membres']}
+            formatter={(value: number, name: string) => {
+              const label = name === 'percentage_21' ? '21 jours' : name === 'percentage_42' ? '42 jours' : '';
+              return [`${value.toFixed(1)}%`, label];
+            }}
             labelFormatter={(label) => `Année: ${label}`}
           />
           <Legend />
           <ReferenceLine y={50} stroke="#ff7300" strokeDasharray="5 5" label="50%" />
-          <Line 
-            type="monotone" 
-            dataKey="percentage" 
-            stroke="#8884d8" 
-            strokeWidth={2}
-            dot={{ r: 3 }}
-            name="% de membres vérifiant le critère"
-          />
+          {chartData.some(d => d.percentage_21 !== undefined) && (
+            <Line 
+              type="monotone" 
+              dataKey="percentage_21" 
+              stroke="#8884d8" 
+              strokeWidth={2}
+              dot={{ r: 3 }}
+              name={`21 jours (seuil: ${(threshold * 21 / 30).toFixed(1)}mm)`}
+            />
+          )}
+          {chartData.some(d => d.percentage_42 !== undefined) && (
+            <Line 
+              type="monotone" 
+              dataKey="percentage_42" 
+              stroke="#82ca9d" 
+              strokeWidth={2}
+              dot={{ r: 3 }}
+              name={`42 jours (seuil: ${(threshold * 42 / 30).toFixed(1)}mm)`}
+            />
+          )}
         </LineChart>
       </ResponsiveContainer>
     </div>

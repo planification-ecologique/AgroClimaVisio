@@ -435,10 +435,10 @@ async def get_cover_crop_feasibility(request: CoverCropFeasibilityRequest):
     """
     Calcule le % de membres EMUL qui vérifient le critère de faisabilité des couverts végétaux :
     - Minimum des fenêtres glissantes de précipitations sur la période
-    - Résultat par année
+    - Résultat par année pour deux tailles de fenêtre (21 et 42 jours)
     """
-    # Configuration de la fenêtre glissante
-    window_size = 45  # Taille de la fenêtre glissante en jours
+    # Configuration des fenêtres glissantes
+    window_sizes = [21, 42]  # Tailles de fenêtre en jours
     
     loader = get_duckdb_loader()
     if loader is None:
@@ -492,11 +492,11 @@ async def get_cover_crop_feasibility(request: CoverCropFeasibilityRequest):
         
         years = list(range(request.start_year, request.end_year + 1))
         
-        # Pour chaque année, calculer le minimum des fenêtres glissantes pour chaque membre
-        yearly_data = []
+        # Pour chaque année, calculer le minimum des fenêtres glissantes pour chaque membre et chaque taille de fenêtre
+        yearly_data = {}
         
         for year in years:
-            # Période : 1er juillet au 30 septembre
+            # Période : 15 août au 15 octobre
             start_date = date(year, 8, 15)
             end_date = date(year, 10, 15)
             
@@ -524,53 +524,57 @@ async def get_cover_crop_feasibility(request: CoverCropFeasibilityRequest):
             ).df()
             
             if result_df.empty:
-                yearly_data.append({
-                    "year": year,
+                yearly_data[year] = {
                     "member_minima": {}
-                })
+                }
                 continue
             
-            # Pour chaque membre, calculer le minimum des fenêtres glissantes
-            member_minima = {}
+            # Pour chaque taille de fenêtre, calculer le minimum pour chaque membre
+            member_minima_by_window = {}
             
-            for member in available_members:
-                member_data = result_df[result_df['member'] == member].copy()
+            for window_size in window_sizes:
+                member_minima = {}
                 
-                if member_data.empty:
-                    member_minima[member] = None
-                    continue
+                for member in available_members:
+                    member_data = result_df[result_df['member'] == member].copy()
+                    
+                    if member_data.empty:
+                        member_minima[member] = None
+                        continue
+                    
+                    # Convertir en datetime si nécessaire
+                    if 'time' in member_data.columns:
+                        member_data['time'] = pd.to_datetime(member_data['time'])
+                        member_data = member_data.sort_values('time')
+                    
+                    # Calculer le minimum des fenêtres glissantes
+                    daily_pr = member_data['daily_pr_mm'].values
+                    
+                    if len(daily_pr) < window_size:
+                        member_minima[member] = None
+                        continue
+                    
+                    # Fenêtres glissantes
+                    window_sums = []
+                    for i in range(len(daily_pr) - window_size + 1):
+                        window_sum = sum(daily_pr[i:i+window_size])
+                        window_sums.append(window_sum)
+                    
+                    if window_sums:
+                        member_minima[member] = round(min(window_sums), 2)
+                    else:
+                        member_minima[member] = None
                 
-                # Convertir en datetime si nécessaire
-                if 'time' in member_data.columns:
-                    member_data['time'] = pd.to_datetime(member_data['time'])
-                    member_data = member_data.sort_values('time')
-                
-                # Calculer le minimum des fenêtres glissantes
-                daily_pr = member_data['daily_pr_mm'].values
-                
-                if len(daily_pr) < window_size:
-                    member_minima[member] = None
-                    continue
-                
-                # Fenêtres glissantes
-                window_sums = []
-                for i in range(len(daily_pr) - window_size + 1):
-                    window_sum = sum(daily_pr[i:i+window_size])
-                    window_sums.append(window_sum)
-                
-                if window_sums:
-                    member_minima[member] = round(min(window_sums), 2)
-                else:
-                    member_minima[member] = None
+                member_minima_by_window[window_size] = member_minima
             
-            yearly_data.append({
-                "year": year,
-                "member_minima": member_minima
-            })
+            yearly_data[year] = {
+                "member_minima_by_window": member_minima_by_window
+            }
         
         return {
             "city": request.city,
-            "criterion": f"Minimum des fenêtres glissantes de {window_size} jours (15 août - 15 octobre)",
+            "criterion": "Minimum des fenêtres glissantes (15 août - 15 octobre)",
+            "window_sizes": window_sizes,
             "years": years,
             "yearly_data": yearly_data,
             "total_members": len(available_members),
