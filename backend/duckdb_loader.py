@@ -49,7 +49,7 @@ class DuckDBClimateLoader:
         
         # Connexion DuckDB avec gestion d'erreurs pour les verrous
         try:
-            self.conn = duckdb.connect(str(self.db_path))
+            self.conn = duckdb.connect(str(self.db_path), read_only=True)
         except Exception as e:
             if "lock" in str(e).lower() or "conflicting" in str(e).lower():
                 raise IOError(

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import ClimateChart from '../components/ClimateChart';
 import CoverCropFeasibilityChart from '../components/CoverCropFeasibilityChart';
+import CornViabilityChart from '../components/CornViabilityChart';
 import SQLQueryPanel from '../components/SQLQueryPanel';
 import Header from '../components/Header';
 import CheckboxDropdown from '../components/CheckboxDropdown';
@@ -22,8 +23,9 @@ export default function ChartsPage() {
   const [availableCities, setAvailableCities] = useState<CityOption[]>([]);
   const [availableMembers, setAvailableMembers] = useState<string[]>([]);
   const [, setIsLoadingOptions] = useState<boolean>(true);
-  const [activeTab, setActiveTab] = useState<'monthly' | 'cover-crop' | 'sql'>('monthly');
+  const [activeTab, setActiveTab] = useState<'monthly' | 'cover-crop' | 'corn' | 'sql'>('monthly');
   const [coverCropCity, setCoverCropCity] = useState<string>('Chartres');
+  const [cornCity, setCornCity] = useState<string>('Chartres');
 
   // Charger les options disponibles
   useEffect(() => {
@@ -97,6 +99,20 @@ export default function ChartsPage() {
               }}
             >
               Faisabilité couverts végétaux
+            </button>
+            <button
+              onClick={() => setActiveTab('corn')}
+              style={{
+                padding: '10px 20px',
+                border: 'none',
+                background: activeTab === 'corn' ? '#3498db' : 'transparent',
+                color: activeTab === 'corn' ? 'white' : '#333',
+                cursor: 'pointer',
+                borderTopLeftRadius: '4px',
+                borderTopRightRadius: '4px'
+              }}
+            >
+              Viabilité maïs
             </button>
             {(import.meta.env.DEV || import.meta.env.VITE_SHOW_SQL_PANEL === 'true') && (
               <button
@@ -195,6 +211,25 @@ export default function ChartsPage() {
               </div>
             </div>
           )}
+          
+          {activeTab === 'corn' && (
+            <div className="controls-grid">
+              <div className="control-group">
+                <label htmlFor="corn-city">Ville:</label>
+                <select
+                  id="corn-city"
+                  value={cornCity}
+                  onChange={(e) => setCornCity(e.target.value)}
+                >
+                  {availableCities.map(city => (
+                    <option key={city.name} value={city.name}>
+                      {city.name} ({city.region})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
         </div>
         <div className="charts-chart-container">
           {activeTab === 'monthly' && (
@@ -210,6 +245,14 @@ export default function ChartsPage() {
           {activeTab === 'cover-crop' && (
             <CoverCropFeasibilityChart
               city={coverCropCity}
+              startYear={2025}
+              endYear={2100}
+              experiment="ssp370"
+            />
+          )}
+          {activeTab === 'corn' && (
+            <CornViabilityChart
+              city={cornCity}
               startYear={2025}
               endYear={2100}
               experiment="ssp370"

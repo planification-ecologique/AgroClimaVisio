@@ -214,6 +214,15 @@ class CoverCropFeasibilityRequest(BaseModel):
     experiment: Optional[str] = "ssp370"
 
 
+class CornViabilityRequest(BaseModel):
+    """Requête pour calculer la viabilité du maïs"""
+    city: str  # Ville pour laquelle calculer la viabilité
+    start_year: int = 2025
+    end_year: int = 2100
+    experiment: Optional[str] = "ssp370"
+    # Seuils configurables (seront appliqués côté frontend, mais on peut les prévoir ici pour documentation)
+
+
 class SQLQueryRequest(BaseModel):
     """Requête SQL libre (développement uniquement)"""
     query: str  # Requête SQL à exécuter
@@ -587,7 +596,224 @@ async def get_cover_crop_feasibility(request: CoverCropFeasibilityRequest):
         return {
             "error": str(e),
             "years": [],
-            "success_percentages": []
+            "yearly_data": {}
+        }
+
+
+@app.post("/api/charts/corn-viability")
+async def get_corn_viability(request: CornViabilityRequest):
+    """
+    Calcule le % de membres EMUL qui vérifient les critères de viabilité du maïs :
+    - Semis : cumul minimum sur mars-avril
+    - Croissance courbe 1 : minimum des fenêtres glissantes de 60j (mi-mai à fin août)
+    - Croissance courbe 2 : minimum des fenêtres glissantes de 30j (mi-mai à fin août)
+    - Récolte : minimum des fenêtres glissantes de 15j (mi-octobre à mi-décembre) <= seuil
+    """
+    loader = get_duckdb_loader()
+    if loader is None:
+        return {
+            "error": "Base de données DuckDB non disponible",
+            "years": [],
+            "yearly_data": {}
+        }
+    
+    try:
+        from models import ExperimentType
+        from points_config import get_point_by_name
+        
+        # Récupérer le point géographique
+        try:
+            point = get_point_by_name(request.city)
+        except ValueError:
+            return {
+                "error": f"Ville non trouvée: {request.city}",
+                "years": [],
+                "yearly_data": {}
+            }
+        
+        # Convertir l'expérience
+        experiment_map = {
+            "historical": ExperimentType.HISTORICAL,
+            "ssp370": ExperimentType.SSP370,
+            "ssp585": ExperimentType.SSP585,
+            "ssp245": ExperimentType.SSP245,
+            "ssp126": ExperimentType.SSP126,
+        }
+        experiment = experiment_map.get(request.experiment.lower(), ExperimentType.SSP370)
+        
+        # Récupérer tous les membres EMUL disponibles
+        members_df = loader.conn.execute("""
+            SELECT DISTINCT member
+            FROM climate_data
+            WHERE (rcm LIKE '%EMUL%' OR rcm LIKE '%emul%' OR rcm = 'CNRM-ALADIN63-EMUL')
+              AND experiment = ?
+            ORDER BY member
+        """, [experiment.value]).df()
+        
+        available_members = members_df['member'].tolist() if not members_df.empty else []
+        
+        if not available_members:
+            return {
+                "error": "Aucun membre EMUL trouvé",
+                "years": [],
+                "yearly_data": {}
+            }
+        
+        years = list(range(request.start_year, request.end_year + 1))
+        yearly_data = {}
+        
+        for year in years:
+            # Périodes pour chaque critère
+            # Semis : mars-avril
+            sowing_start = date(year, 3, 1)
+            sowing_end = date(year, 4, 30)
+            
+            # Croissance : mi-mai à fin août
+            growth_start = date(year, 5, 15)
+            growth_end = date(year, 8, 31)
+            
+            # Récolte : mi-octobre à mi-décembre
+            harvest_start = date(year, 10, 15)
+            harvest_end = date(year, 12, 15)
+            
+            # Récupérer toutes les données nécessaires pour cette année
+            # IMPORTANT: Grouper uniquement par member, time pour agréger toutes les cellules de grille
+            query = """
+                SELECT 
+                    member,
+                    time,
+                    SUM(value * 86400) as daily_pr_mm
+                FROM climate_data
+                WHERE variable = 'pr'
+                  AND experiment = ?
+                  AND time >= ?
+                  AND time <= ?
+                  AND (rcm LIKE '%EMUL%' OR rcm LIKE '%emul%' OR rcm = 'CNRM-ALADIN63-EMUL')
+                  AND ABS(lat - ?) < 0.1
+                  AND ABS(lon - ?) < 0.1
+                GROUP BY member, time
+                ORDER BY member, time
+            """
+            
+            # Utiliser la période la plus large pour récupérer toutes les données d'un coup
+            all_period_start = sowing_start
+            all_period_end = harvest_end
+            
+            result_df = loader.conn.execute(
+                query,
+                [experiment.value, all_period_start, all_period_end, point['lat'], point['lon']]
+            ).df()
+            
+            if result_df.empty:
+                yearly_data[year] = {
+                    "sowing_totals": {},
+                    "growth_minima_60d": {},
+                    "growth_minima_30d": {},
+                    "harvest_minima_15d": {}
+                }
+                continue
+            
+            # Pour chaque membre, calculer les indicateurs
+            sowing_totals = {}
+            growth_minima_60d = {}
+            growth_minima_30d = {}
+            harvest_minima_15d = {}
+            
+            for member in available_members:
+                member_data = result_df[result_df['member'] == member].copy()
+                
+                if member_data.empty:
+                    sowing_totals[member] = None
+                    growth_minima_60d[member] = None
+                    growth_minima_30d[member] = None
+                    harvest_minima_15d[member] = None
+                    continue
+                
+                # Convertir en datetime si nécessaire
+                if 'time' in member_data.columns:
+                    member_data['time'] = pd.to_datetime(member_data['time'])
+                    member_data = member_data.sort_values('time')
+                
+                daily_pr = member_data['daily_pr_mm'].values
+                dates = pd.to_datetime(member_data['time'].values)
+                
+                # 1. Semis : cumul sur mars-avril
+                sowing_mask = (dates >= pd.Timestamp(sowing_start)) & (dates <= pd.Timestamp(sowing_end))
+                sowing_pr = daily_pr[sowing_mask]
+                if len(sowing_pr) > 0:
+                    sowing_totals[member] = round(sum(sowing_pr), 2)
+                else:
+                    sowing_totals[member] = None
+                
+                # 2. Croissance courbe 1 : minimum des fenêtres glissantes de 60 jours
+                growth_mask = (dates >= pd.Timestamp(growth_start)) & (dates <= pd.Timestamp(growth_end))
+                growth_pr = daily_pr[growth_mask]
+                if len(growth_pr) >= 60:
+                    window_size = 60
+                    window_sums = []
+                    for i in range(len(growth_pr) - window_size + 1):
+                        window_sum = sum(growth_pr[i:i+window_size])
+                        window_sums.append(window_sum)
+                    if window_sums:
+                        growth_minima_60d[member] = round(min(window_sums), 2)
+                    else:
+                        growth_minima_60d[member] = None
+                else:
+                    growth_minima_60d[member] = None
+                
+                # 3. Croissance courbe 2 : minimum des fenêtres glissantes de 30 jours
+                if len(growth_pr) >= 30:
+                    window_size = 30
+                    window_sums = []
+                    for i in range(len(growth_pr) - window_size + 1):
+                        window_sum = sum(growth_pr[i:i+window_size])
+                        window_sums.append(window_sum)
+                    if window_sums:
+                        growth_minima_30d[member] = round(min(window_sums), 2)
+                    else:
+                        growth_minima_30d[member] = None
+                else:
+                    growth_minima_30d[member] = None
+                
+                # 4. Récolte : minimum des fenêtres glissantes de 15 jours (on veut le min pour vérifier qu'au moins une fenêtre <= seuil)
+                harvest_mask = (dates >= pd.Timestamp(harvest_start)) & (dates <= pd.Timestamp(harvest_end))
+                harvest_pr = daily_pr[harvest_mask]
+                if len(harvest_pr) >= 15:
+                    window_size = 15
+                    window_sums = []
+                    for i in range(len(harvest_pr) - window_size + 1):
+                        window_sum = sum(harvest_pr[i:i+window_size])
+                        window_sums.append(window_sum)
+                    if window_sums:
+                        harvest_minima_15d[member] = round(min(window_sums), 2)
+                    else:
+                        harvest_minima_15d[member] = None
+                else:
+                    harvest_minima_15d[member] = None
+            
+            yearly_data[year] = {
+                "sowing_totals": sowing_totals,
+                "growth_minima_60d": growth_minima_60d,
+                "growth_minima_30d": growth_minima_30d,
+                "harvest_minima_15d": harvest_minima_15d
+            }
+        
+        return {
+            "city": request.city,
+            "criterion": "Viabilité du maïs (semis + croissance + récolte)",
+            "years": years,
+            "yearly_data": yearly_data,
+            "total_members": len(available_members),
+            "members": available_members
+        }
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {
+            "error": str(e),
+            "years": [],
+            "yearly_data": {}
         }
 
 
