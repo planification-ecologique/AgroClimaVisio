@@ -106,6 +106,79 @@ export default function SQLQueryPanel() {
   return (
     <div style={{ padding: '10px', maxWidth: '100%' }}>
       <h2 style={{ marginBottom: '15px' }}>SQL Query (Développement)</h2>
+      <div style={{ 
+        marginBottom: '15px', 
+        padding: '12px', 
+        backgroundColor: '#f8f9fa', 
+        border: '1px solid #dee2e6', 
+        borderRadius: '4px',
+        fontSize: '13px'
+      }}>
+        <div style={{ fontWeight: '600', marginBottom: '10px', color: '#495057' }}>
+          📊 Structure de la table <code style={{ backgroundColor: '#e9ecef', padding: '2px 6px', borderRadius: '3px' }}>climate_data</code>:
+        </div>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', fontFamily: 'monospace' }}>
+            <thead>
+              <tr style={{ backgroundColor: '#e9ecef', borderBottom: '2px solid #dee2e6' }}>
+                <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: '600' }}>Colonne</th>
+                <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: '600' }}>Type</th>
+                <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: '600' }}>Exemple</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr style={{ borderBottom: '1px solid #dee2e6' }}>
+                <td style={{ padding: '6px 8px' }}>variable</td>
+                <td style={{ padding: '6px 8px', color: '#6c757d' }}>VARCHAR</td>
+                <td style={{ padding: '6px 8px', color: '#28a745' }}>pr, tas</td>
+              </tr>
+              <tr style={{ borderBottom: '1px solid #dee2e6' }}>
+                <td style={{ padding: '6px 8px' }}>experiment</td>
+                <td style={{ padding: '6px 8px', color: '#6c757d' }}>VARCHAR</td>
+                <td style={{ padding: '6px 8px', color: '#28a745' }}>historical, ssp370</td>
+              </tr>
+              <tr style={{ borderBottom: '1px solid #dee2e6' }}>
+                <td style={{ padding: '6px 8px' }}>gcm</td>
+                <td style={{ padding: '6px 8px', color: '#6c757d' }}>VARCHAR</td>
+                <td style={{ padding: '6px 8px', color: '#28a745' }}>MPI-ESM1-2-LR</td>
+              </tr>
+              <tr style={{ borderBottom: '1px solid #dee2e6' }}>
+                <td style={{ padding: '6px 8px' }}>rcm</td>
+                <td style={{ padding: '6px 8px', color: '#6c757d' }}>VARCHAR</td>
+                <td style={{ padding: '6px 8px', color: '#28a745' }}>CNRM-ALADIN63-EMUL</td>
+              </tr>
+              <tr style={{ borderBottom: '1px solid #dee2e6' }}>
+                <td style={{ padding: '6px 8px' }}>member</td>
+                <td style={{ padding: '6px 8px', color: '#6c757d' }}>VARCHAR</td>
+                <td style={{ padding: '6px 8px', color: '#28a745' }}>r1, r10</td>
+              </tr>
+              <tr style={{ borderBottom: '1px solid #dee2e6' }}>
+                <td style={{ padding: '6px 8px' }}>lat</td>
+                <td style={{ padding: '6px 8px', color: '#6c757d' }}>DOUBLE</td>
+                <td style={{ padding: '6px 8px', color: '#28a745' }}>48.45, 45.76</td>
+              </tr>
+              <tr style={{ borderBottom: '1px solid #dee2e6' }}>
+                <td style={{ padding: '6px 8px' }}>lon</td>
+                <td style={{ padding: '6px 8px', color: '#6c757d' }}>DOUBLE</td>
+                <td style={{ padding: '6px 8px', color: '#28a745' }}>1.49, 4.84</td>
+              </tr>
+              <tr style={{ borderBottom: '1px solid #dee2e6' }}>
+                <td style={{ padding: '6px 8px' }}>time</td>
+                <td style={{ padding: '6px 8px', color: '#6c757d' }}>DATE</td>
+                <td style={{ padding: '6px 8px', color: '#28a745' }}>2025-01-01</td>
+              </tr>
+              <tr>
+                <td style={{ padding: '6px 8px' }}>value</td>
+                <td style={{ padding: '6px 8px', color: '#6c757d' }}>DOUBLE</td>
+                <td style={{ padding: '6px 8px', color: '#28a745' }}>2.5e-05 (pr), 285.2 (tas)</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div style={{ marginTop: '8px', fontSize: '11px', color: '#6c757d', fontStyle: 'italic' }}>
+          PRIMARY KEY: (variable, experiment, gcm, rcm, member, lat, lon, time)
+        </div>
+      </div>
       <div style={{ marginBottom: '15px' }}>
         <textarea
           value={query}
