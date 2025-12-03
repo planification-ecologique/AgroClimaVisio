@@ -4,8 +4,10 @@ AgroClimaVisio est une interface de visualisation agro‑climatique permettant a
 
 ## 🚀 Technologies
 
-- **Frontend**: Vite + React + TypeScript + MapLibre GL
+- **Frontend**: Vite + React + TypeScript + Recharts + MapLibre GL
 - **Backend**: FastAPI (Python)
+- **Base de données**: DuckDB (OLAP in-process)
+- **Données climatiques**: NetCDF (Météo-France DRIAS)
 - **Gestion de dépendances**: Poetry (backend), Yarn (frontend)
 - **Cartes**: MapLibre GL
 
@@ -69,58 +71,114 @@ L'application sera accessible sur http://localhost:5173
 
 ```
 AgroClimaVisio/
-├── frontend/          # Application React + Vite
+├── frontend/              # Application React + Vite
 │   ├── src/
-│   │   ├── components/  # Composants React
-│   │   ├── types.ts     # Types TypeScript
-│   │   └── App.tsx      # Composant principal
+│   │   ├── components/    # Composants React (charts, maps, etc.)
+│   │   ├── pages/         # Pages de l'application
+│   │   ├── types.ts       # Types TypeScript
+│   │   └── App.tsx        # Composant principal
 │   ├── package.json
 │   └── yarn.lock
-├── backend/           # API FastAPI
-│   ├── main.py        # Point d'entrée de l'API
-│   ├── pyproject.toml # Configuration Poetry
-│   └── requirements.txt (optionnel, pour référence)
+├── backend/               # API FastAPI
+│   ├── main.py            # Point d'entrée de l'API
+│   ├── duckdb_loader.py   # Chargeur DuckDB pour données climatiques
+│   ├── import_to_duckdb.py # Script d'import NetCDF → DuckDB
+│   ├── points_config.py   # Configuration des points géographiques
+│   ├── data/              # Données NetCDF et base DuckDB
+│   │   └── climate_data.duckdb
+│   ├── pyproject.toml     # Configuration Poetry
+│   └── models.py          # Modèles de données
 └── README.md
 ```
 
 ## 🎯 Fonctionnalités
 
-- **Visualisation cartographique** interactive avec MapLibre
-- **Paramètres ajustables** pour différents scénarios agricoles
-- **Presets agricoles** (post-semis été, interculture été/hiver, semis blé)
-- **Comparaison temporelle** (2020, 2030, 2040, 2050)
-- **Types de cartes** :
-  - Potentiel agro-climatique
-  - Risque de sécheresse
-  - Risque d'excès d'eau
-  - Extrêmes (orages, chaleur)
-  - Vagues de chaleur
+### Visualisation de données climatiques
+- **Graphiques mensuels** : Précipitations et températures pour plusieurs villes et membres d'ensemble
+- **Faisabilité des couverts végétaux** : Analyse de la faisabilité selon les précipitations (fenêtres glissantes)
+- **Viabilité du maïs** : Analyse multi-critères (semis, croissance, récolte)
+- **Données historiques et projetées** : Comparaison entre périodes historiques (1990-2014) et projections (2015-2100)
+
+### Indicateurs agro-climatiques
+- **Couverts végétaux** : Analyse des fenêtres de précipitations optimales (21 et 42 jours)
+- **Viabilité maïs** : Critères de semis (cumul pluie), croissance (fenêtres glissantes), récolte (sécheresse)
+
+### Données
+- **Base de données DuckDB** : Stockage optimisé pour requêtes analytiques rapides
+- **Import NetCDF** : Import automatique des fichiers climatiques Météo-France
+- **Points géographiques** : 12 villes représentatives (Beauce, Bretagne, et autres régions)
+
+### API
+- **Endpoints REST** : API complète pour accéder aux données climatiques
+- **Documentation interactive** : Swagger UI disponible sur `/docs`
+- **SQL Query Panel** : Interface de développement pour requêtes SQL directes (mode dev)
 
 ## 🔧 Configuration
 
 ### Variables d'environnement
 
 **Frontend** (`frontend/.env`):
-```
+```env
 VITE_API_URL=http://localhost:8000
 ```
 
-**Backend** (`backend/.env`):
-```
-API_HOST=0.0.0.0
-API_PORT=8000
-CORS_ORIGINS=http://localhost:5173
+**Backend** (`backend/.env` - optionnel):
+```env
+CORS_ORIGINS=http://localhost:5173,https://agroclimavisio.surge.sh
+DUCKDB_PATH=/path/to/db  # Chemin vers la base DuckDB (optionnel)
 ```
 
-## 📝 TODO
+## 📊 Import des données climatiques
 
-- [ ] Intégrer les données climatiques de Météo-France
-- [ ] Implémenter le calcul des indicateurs agro-climatiques
-- [ ] Ajouter les couches de données sur la carte MapLibre
-- [ ] Implémenter le mode comparaison
-- [ ] Ajouter l'export de cartes
-- [ ] Améliorer la gestion des erreurs
-- [ ] Ajouter des tests
+### Préparation des données
+
+1. **Télécharger les fichiers NetCDF** depuis data.gouv.fr (Météo-France DRIAS)
+   ```bash
+   cd backend
+   poetry run python download_emul_ssp370.py --experiment historical --download
+   poetry run python download_emul_ssp370.py --experiment ssp370 --download
+   ```
+
+2. **Placer les fichiers** dans `backend/data/`
+
+3. **Importer dans DuckDB**
+   ```bash
+   cd backend
+   poetry run python import_to_duckdb.py
+   ```
+
+Le script importe automatiquement les données pour tous les points géographiques configurés dans `points_config.py`.
+
+### Points géographiques disponibles
+
+- **Beauce** : Chartres, Orléans, Châteaudun
+- **Bretagne** : Rennes, Brest, Vannes
+- **Autres régions** : Lyon, Moulins, Tulle, Béziers, Aix-en-Provence, Pau
+
+## 📡 Endpoints API principaux
+
+- `GET /api/charts/monthly` - Données mensuelles (précipitations/températures)
+- `GET /api/charts/options` - Villes et membres d'ensemble disponibles
+- `POST /api/charts/cover-crop-feasibility` - Faisabilité des couverts végétaux
+- `POST /api/charts/corn-viability` - Viabilité du maïs
+- `GET /api/variables` - Variables climatiques disponibles
+- `GET /api/experiments` - Scénarios climatiques disponibles
+- `POST /api/dev/sql` - Requêtes SQL directes (mode développement)
+
+Voir la documentation complète sur http://localhost:8000/docs
+
+## 🚢 Déploiement
+
+### Backend (Railway)
+Le backend est déployé sur Railway avec Docker. Voir `Dockerfile` pour les détails.
+
+### Frontend (Surge.sh)
+Le frontend est déployé sur Surge.sh :
+```bash
+cd frontend
+yarn build
+surge dist/ agroclimavisio.surge.sh
+```
 
 ## 📄 Licence
 
