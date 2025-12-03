@@ -6,7 +6,7 @@ interface SQLQueryResult {
   query: string;
   row_count: number;
   columns: string[];
-  results: Record<string, any>[];
+  results: Record<string, string | number | null | undefined>[];
   error?: string;
   traceback?: string;
   allowed?: boolean;
@@ -54,6 +54,53 @@ export default function SQLQueryPanel() {
       e.preventDefault();
       executeQuery();
     }
+  };
+
+  const downloadAsCSV = () => {
+    if (!result || !result.results || result.results.length === 0 || result.error) {
+      return;
+    }
+
+    // Convert results to CSV format
+    const escapeCSV = (value: string | number | null | undefined): string => {
+      if (value === null || value === undefined) {
+        return '';
+      }
+      const stringValue = String(value);
+      // If value contains comma, quote, or newline, wrap in quotes and escape quotes
+      if (stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')) {
+        return `"${stringValue.replace(/"/g, '""')}"`;
+      }
+      return stringValue;
+    };
+
+    // Build CSV content
+    const csvRows: string[] = [];
+    
+    // Add header row
+    csvRows.push(result.columns.map(escapeCSV).join(','));
+
+    // Add data rows (all results, not just first 100)
+    result.results.forEach((row) => {
+      csvRows.push(result.columns.map((col) => escapeCSV(row[col])).join(','));
+    });
+
+    const csvContent = csvRows.join('\n');
+    
+    // Create blob and download
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    
+    link.setAttribute('href', url);
+    link.setAttribute('download', `query_results_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -116,9 +163,29 @@ export default function SQLQueryPanel() {
             </div>
           ) : (
             <div>
-              <div style={{ marginBottom: '10px', color: '#666' }}>
-                <strong>{result.row_count}</strong> ligne{result.row_count !== 1 ? 's' : ''} retournée{result.row_count !== 1 ? 's' : ''}
-                {result.columns.length > 0 && ` • ${result.columns.length} colonne${result.columns.length !== 1 ? 's' : ''}`}
+              <div style={{ marginBottom: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ color: '#666' }}>
+                  <strong>{result.row_count}</strong> ligne{result.row_count !== 1 ? 's' : ''} retournée{result.row_count !== 1 ? 's' : ''}
+                  {result.columns.length > 0 && ` • ${result.columns.length} colonne${result.columns.length !== 1 ? 's' : ''}`}
+                </div>
+                {result.results && result.results.length > 0 && (
+                  <button
+                    onClick={downloadAsCSV}
+                    style={{
+                      padding: '8px 16px',
+                      backgroundColor: '#27ae60',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontSize: '14px',
+                      fontWeight: '500',
+                    }}
+                    title="Télécharger tous les résultats en CSV"
+                  >
+                    📥 Télécharger CSV
+                  </button>
+                )}
               </div>
               {result.results && result.results.length > 0 ? (
                 <div style={{ overflowX: 'auto', border: '1px solid #ddd', borderRadius: '4px' }}>
@@ -170,4 +237,5 @@ export default function SQLQueryPanel() {
     </div>
   );
 }
+
 
