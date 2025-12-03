@@ -27,8 +27,8 @@ export default function Header({
         <h1>AgroClimaVisio</h1>
         <nav className="header-nav">
           <Link 
-            to="/" 
-            className={location.pathname === '/' ? 'active' : ''}
+            to="/map" 
+            className={location.pathname === '/map' ? 'active' : ''}
           >
             Cartes
           </Link>
