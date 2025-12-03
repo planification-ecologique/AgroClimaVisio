@@ -434,9 +434,12 @@ async def get_monthly_chart_data(request: MonthlyChartRequest):
 async def get_cover_crop_feasibility(request: CoverCropFeasibilityRequest):
     """
     Calcule le % de membres EMUL qui vérifient le critère de faisabilité des couverts végétaux :
-    - 30mm de pluie par mois en glissant du 1er juillet au 15 septembre
+    - Minimum des fenêtres glissantes de précipitations sur la période
     - Résultat par année
     """
+    # Configuration de la fenêtre glissante
+    window_size = 45  # Taille de la fenêtre glissante en jours
+    
     loader = get_duckdb_loader()
     if loader is None:
         return {
@@ -494,8 +497,8 @@ async def get_cover_crop_feasibility(request: CoverCropFeasibilityRequest):
         
         for year in years:
             # Période : 1er juillet au 30 septembre
-            start_date = date(year, 7, 1)
-            end_date = date(year, 9, 30)
+            start_date = date(year, 8, 15)
+            end_date = date(year, 10, 15)
             
             # Récupérer les données quotidiennes pour tous les membres
             query = """
@@ -527,7 +530,7 @@ async def get_cover_crop_feasibility(request: CoverCropFeasibilityRequest):
                 })
                 continue
             
-            # Pour chaque membre, calculer le minimum des fenêtres glissantes de 30 jours
+            # Pour chaque membre, calculer le minimum des fenêtres glissantes
             member_minima = {}
             
             for member in available_members:
@@ -542,15 +545,14 @@ async def get_cover_crop_feasibility(request: CoverCropFeasibilityRequest):
                     member_data['time'] = pd.to_datetime(member_data['time'])
                     member_data = member_data.sort_values('time')
                 
-                # Calculer le minimum des fenêtres glissantes de 30 jours
+                # Calculer le minimum des fenêtres glissantes
                 daily_pr = member_data['daily_pr_mm'].values
                 
-                if len(daily_pr) < 30:
+                if len(daily_pr) < window_size:
                     member_minima[member] = None
                     continue
                 
-                # Fenêtres glissantes de 30 jours
-                window_size = 30
+                # Fenêtres glissantes
                 window_sums = []
                 for i in range(len(daily_pr) - window_size + 1):
                     window_sum = sum(daily_pr[i:i+window_size])
@@ -568,7 +570,7 @@ async def get_cover_crop_feasibility(request: CoverCropFeasibilityRequest):
         
         return {
             "city": request.city,
-            "criterion": "Minimum des fenêtres glissantes de 30 jours (1er juillet - 30 septembre)",
+            "criterion": f"Minimum des fenêtres glissantes de {window_size} jours (15 août - 15 octobre)",
             "years": years,
             "yearly_data": yearly_data,
             "total_members": len(available_members),
