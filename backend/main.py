@@ -7,6 +7,7 @@ from pathlib import Path
 import random
 import math
 import os
+import pandas as pd
 
 from models import (
     VariableType, ExperimentType, VARIABLES_INFO, VariableInfo
@@ -203,6 +204,19 @@ class MonthlyChartRequest(BaseModel):
     rcm: Optional[str] = None  # Si None, utilise tous les RCM disponibles
     cities: Optional[List[str]] = None  # Liste des villes à inclure (ex: ["Chartres", "Rennes"])
     members: Optional[List[str]] = None  # Liste des membres d'ensemble (ex: ["r1", "r2"])
+
+
+class CoverCropFeasibilityRequest(BaseModel):
+    """Requête pour calculer la faisabilité des couverts végétaux"""
+    city: str  # Ville pour laquelle calculer la faisabilité
+    start_year: int = 2025
+    end_year: int = 2100
+    experiment: Optional[str] = "ssp370"
+
+
+class SQLQueryRequest(BaseModel):
+    """Requête SQL libre (développement uniquement)"""
+    query: str  # Requête SQL à exécuter
 
 
 @app.post("/api/charts/monthly")
@@ -413,6 +427,250 @@ async def get_monthly_chart_data(request: MonthlyChartRequest):
         return {
             "error": str(e),
             "points": []
+        }
+
+
+@app.post("/api/charts/cover-crop-feasibility")
+async def get_cover_crop_feasibility(request: CoverCropFeasibilityRequest):
+    """
+    Calcule le % de membres EMUL qui vérifient le critère de faisabilité des couverts végétaux :
+    - 30mm de pluie par mois en glissant du 1er juillet au 15 septembre
+    - Résultat par année
+    """
+    loader = get_duckdb_loader()
+    if loader is None:
+        return {
+            "error": "Base de données DuckDB non disponible",
+            "years": [],
+            "success_percentages": []
+        }
+    
+    try:
+        from models import ExperimentType
+        from points_config import get_point_by_name
+        
+        # Récupérer le point géographique
+        try:
+            point = get_point_by_name(request.city)
+        except ValueError:
+            return {
+                "error": f"Ville non trouvée: {request.city}",
+                "years": [],
+                "success_percentages": []
+            }
+        
+        # Convertir l'expérience
+        experiment_map = {
+            "historical": ExperimentType.HISTORICAL,
+            "ssp370": ExperimentType.SSP370,
+            "ssp585": ExperimentType.SSP585,
+            "ssp245": ExperimentType.SSP245,
+            "ssp126": ExperimentType.SSP126,
+        }
+        experiment = experiment_map.get(request.experiment.lower(), ExperimentType.SSP370)
+        
+        # Récupérer tous les membres EMUL disponibles
+        members_df = loader.conn.execute("""
+            SELECT DISTINCT member
+            FROM climate_data
+            WHERE (rcm LIKE '%EMUL%' OR rcm LIKE '%emul%' OR rcm = 'CNRM-ALADIN63-EMUL')
+              AND experiment = ?
+            ORDER BY member
+        """, [experiment.value]).df()
+        
+        available_members = members_df['member'].tolist() if not members_df.empty else []
+        
+        if not available_members:
+            return {
+                "error": "Aucun membre EMUL trouvé",
+                "years": [],
+                "success_percentages": []
+            }
+        
+        years = list(range(request.start_year, request.end_year + 1))
+        
+        # Pour chaque année, calculer le minimum des fenêtres glissantes pour chaque membre
+        yearly_data = []
+        
+        for year in years:
+            # Période : 1er juillet au 30 septembre
+            start_date = date(year, 7, 1)
+            end_date = date(year, 9, 30)
+            
+            # Récupérer les données quotidiennes pour tous les membres
+            query = """
+                SELECT 
+                    member,
+                    time,
+                    SUM(value * 86400) as daily_pr_mm  -- Convertir kg/m²/s en mm
+                FROM climate_data
+                WHERE variable = 'pr'
+                  AND experiment = ?
+                  AND time >= ?
+                  AND time <= ?
+                  AND (rcm LIKE '%EMUL%' OR rcm LIKE '%emul%' OR rcm = 'CNRM-ALADIN63-EMUL')
+                  AND ABS(lat - ?) < 0.1
+                  AND ABS(lon - ?) < 0.1
+                GROUP BY member, time, lat, lon
+                ORDER BY member, time
+            """
+            
+            result_df = loader.conn.execute(
+                query,
+                [experiment.value, start_date, end_date, point['lat'], point['lon']]
+            ).df()
+            
+            if result_df.empty:
+                yearly_data.append({
+                    "year": year,
+                    "member_minima": {}
+                })
+                continue
+            
+            # Pour chaque membre, calculer le minimum des fenêtres glissantes de 30 jours
+            member_minima = {}
+            
+            for member in available_members:
+                member_data = result_df[result_df['member'] == member].copy()
+                
+                if member_data.empty:
+                    member_minima[member] = None
+                    continue
+                
+                # Convertir en datetime si nécessaire
+                if 'time' in member_data.columns:
+                    member_data['time'] = pd.to_datetime(member_data['time'])
+                    member_data = member_data.sort_values('time')
+                
+                # Calculer le minimum des fenêtres glissantes de 30 jours
+                daily_pr = member_data['daily_pr_mm'].values
+                
+                if len(daily_pr) < 30:
+                    member_minima[member] = None
+                    continue
+                
+                # Fenêtres glissantes de 30 jours
+                window_size = 30
+                window_sums = []
+                for i in range(len(daily_pr) - window_size + 1):
+                    window_sum = sum(daily_pr[i:i+window_size])
+                    window_sums.append(window_sum)
+                
+                if window_sums:
+                    member_minima[member] = round(min(window_sums), 2)
+                else:
+                    member_minima[member] = None
+            
+            yearly_data.append({
+                "year": year,
+                "member_minima": member_minima
+            })
+        
+        return {
+            "city": request.city,
+            "criterion": "Minimum des fenêtres glissantes de 30 jours (1er juillet - 30 septembre)",
+            "years": years,
+            "yearly_data": yearly_data,
+            "total_members": len(available_members),
+            "members": available_members
+        }
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {
+            "error": str(e),
+            "years": [],
+            "success_percentages": []
+        }
+
+
+@app.post("/api/dev/sql")
+async def execute_sql_query(request: SQLQueryRequest):
+    """
+    Endpoint de développement pour exécuter des requêtes SQL directement.
+    
+    ⚠️ SÉCURITÉ : Disponible uniquement en développement/local.
+    - Limité aux requêtes SELECT uniquement
+    - Désactivé en production
+    """
+    # Vérifier que nous sommes en développement
+    is_dev = os.getenv("ENVIRONMENT", "development").lower() in ["development", "dev", "local"]
+    allow_sql = os.getenv("ALLOW_FREE_SQL", "false").lower() == "true"
+    
+    if not (is_dev or allow_sql):
+        return {
+            "error": "Cet endpoint n'est disponible qu'en développement. Définissez ALLOW_FREE_SQL=true pour l'activer.",
+            "allowed": False
+        }
+    
+    # Normaliser la requête
+    query = request.query.strip()
+    query_upper = query.upper().strip()
+    
+    # Vérifier que c'est une requête SELECT uniquement
+    if not query_upper.startswith("SELECT"):
+        return {
+            "error": "Seules les requêtes SELECT sont autorisées pour des raisons de sécurité.",
+            "allowed": False
+        }
+    
+    # Vérifier qu'il n'y a pas de commandes dangereuses
+    dangerous_keywords = ["DROP", "DELETE", "UPDATE", "INSERT", "ALTER", "CREATE", "TRUNCATE", "EXEC", "EXECUTE"]
+    for keyword in dangerous_keywords:
+        if keyword in query_upper:
+            return {
+                "error": f"Commande dangereuse détectée: {keyword}. Seules les requêtes SELECT sont autorisées.",
+                "allowed": False
+            }
+    
+    loader = get_duckdb_loader()
+    if loader is None:
+        return {
+            "error": "Base de données DuckDB non disponible",
+            "results": None
+        }
+    
+    try:
+        # Exécuter la requête
+        result_df = loader.conn.execute(query).df()
+        
+        # Convertir en format JSON-friendly
+        # Convertir les types numpy/pandas en types Python natifs
+        result_dict = result_df.to_dict(orient='records')
+        
+        # Nettoyer les valeurs (convertir numpy types en Python types)
+        cleaned_results = []
+        for row in result_dict:
+            cleaned_row = {}
+            for key, value in row.items():
+                # Gérer les types numpy/pandas
+                if pd.isna(value):
+                    cleaned_row[key] = None
+                elif isinstance(value, (pd.Timestamp, pd.DatetimeTZDtype)):
+                    cleaned_row[key] = str(value)
+                elif hasattr(value, 'item'):  # numpy scalar
+                    cleaned_row[key] = value.item()
+                else:
+                    cleaned_row[key] = value
+            cleaned_results.append(cleaned_row)
+        
+        return {
+            "query": query,
+            "row_count": len(cleaned_results),
+            "columns": list(result_df.columns) if not result_df.empty else [],
+            "results": cleaned_results,
+            "error": None
+        }
+        
+    except Exception as e:
+        import traceback
+        error_trace = traceback.format_exc()
+        return {
+            "query": query,
+            "error": str(e),
+            "traceback": error_trace if is_dev else None,  # Cacher la traceback en production
+            "results": None
         }
 
 

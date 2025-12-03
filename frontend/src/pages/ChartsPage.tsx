@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import ClimateChart from '../components/ClimateChart';
+import CoverCropFeasibilityChart from '../components/CoverCropFeasibilityChart';
+import SQLQueryPanel from '../components/SQLQueryPanel';
 import Header from '../components/Header';
 import CheckboxDropdown from '../components/CheckboxDropdown';
 import './ChartsPage.css';
@@ -20,6 +22,8 @@ export default function ChartsPage() {
   const [availableCities, setAvailableCities] = useState<CityOption[]>([]);
   const [availableMembers, setAvailableMembers] = useState<string[]>([]);
   const [, setIsLoadingOptions] = useState<boolean>(true);
+  const [activeTab, setActiveTab] = useState<'monthly' | 'cover-crop' | 'sql'>('monthly');
+  const [coverCropCity, setCoverCropCity] = useState<string>('Chartres');
 
   // Charger les options disponibles
   useEffect(() => {
@@ -64,8 +68,56 @@ export default function ChartsPage() {
       />
       <div className="charts-content">
         <div className="charts-controls">
-          <h1>Données climatiques mensuelles - Points représentatifs</h1>
-          <div className="controls-grid">
+          <h1>Graphiques climatiques</h1>
+          <div className="tabs" style={{ marginBottom: '20px', borderBottom: '1px solid #ddd' }}>
+            <button
+              onClick={() => setActiveTab('monthly')}
+              style={{
+                padding: '10px 20px',
+                border: 'none',
+                background: activeTab === 'monthly' ? '#3498db' : 'transparent',
+                color: activeTab === 'monthly' ? 'white' : '#333',
+                cursor: 'pointer',
+                borderTopLeftRadius: '4px',
+                borderTopRightRadius: '4px'
+              }}
+            >
+              Données mensuelles
+            </button>
+            <button
+              onClick={() => setActiveTab('cover-crop')}
+              style={{
+                padding: '10px 20px',
+                border: 'none',
+                background: activeTab === 'cover-crop' ? '#3498db' : 'transparent',
+                color: activeTab === 'cover-crop' ? 'white' : '#333',
+                cursor: 'pointer',
+                borderTopLeftRadius: '4px',
+                borderTopRightRadius: '4px'
+              }}
+            >
+              Faisabilité couverts végétaux
+            </button>
+            {import.meta.env.DEV && (
+              <button
+                onClick={() => setActiveTab('sql')}
+                style={{
+                  padding: '10px 20px',
+                  border: 'none',
+                  background: activeTab === 'sql' ? '#3498db' : 'transparent',
+                  color: activeTab === 'sql' ? 'white' : '#333',
+                  cursor: 'pointer',
+                  borderTopLeftRadius: '4px',
+                  borderTopRightRadius: '4px'
+                }}
+              >
+                SQL Query (Dev)
+              </button>
+            )}
+          </div>
+          
+          {activeTab === 'monthly' && (
+            <div className="controls-grid">
             <div className="control-group">
               <label htmlFor="variable">Variable:</label>
               <select
@@ -123,16 +175,47 @@ export default function ChartsPage() {
               />
             </div>
           </div>
+          )}
+          
+          {activeTab === 'cover-crop' && (
+            <div className="controls-grid">
+              <div className="control-group">
+                <label htmlFor="cover-crop-city">Ville:</label>
+                <select
+                  id="cover-crop-city"
+                  value={coverCropCity}
+                  onChange={(e) => setCoverCropCity(e.target.value)}
+                >
+                  {availableCities.map(city => (
+                    <option key={city.name} value={city.name}>
+                      {city.name} ({city.region})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
         </div>
         <div className="charts-chart-container">
-          <ClimateChart
-            startDate={startDate}
-            endDate={endDate}
-            experiment="ssp370"
-            variable={selectedVariable}
-            cities={selectedCities}
-            members={selectedMembers}
-          />
+          {activeTab === 'monthly' && (
+            <ClimateChart
+              startDate={startDate}
+              endDate={endDate}
+              experiment="ssp370"
+              variable={selectedVariable}
+              cities={selectedCities}
+              members={selectedMembers}
+            />
+          )}
+          {activeTab === 'cover-crop' && (
+            <CoverCropFeasibilityChart
+              city={coverCropCity}
+              startYear={2025}
+              endYear={2100}
+              experiment="ssp370"
+            />
+          )}
+          {activeTab === 'sql' && <SQLQueryPanel />}
         </div>
       </div>
     </div>
